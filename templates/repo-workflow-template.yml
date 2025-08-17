@@ -1,0 +1,31 @@
+# Copy this to your repo: .github/workflows/development-pipeline.yml
+name: Use Development Pipeline
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  # Only trigger on pipeline-related comments
+  check-trigger:
+    if: |
+      contains(github.event.comment.body, '@claude run development pipeline') ||
+      contains(github.event.comment.body, '✅ Research Phase Complete') ||
+      contains(github.event.comment.body, 'approve research') ||
+      contains(github.event.comment.body, '✅ Planning Phase Complete') ||
+      contains(github.event.comment.body, 'approve plan') ||
+      contains(github.event.comment.body, '✅ Implementation Phase Complete') ||
+      contains(github.event.comment.body, 'approve implementation')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger shared workflow
+        run: echo "Triggering shared development pipeline"
+
+  development-pipeline:
+    needs: check-trigger
+    uses: atriumn/atriumn-shared-workflows/.github/workflows/development-pipeline.yml@main
+    with:
+      repo_name: ${{ github.repository }}
+      issue_number: ${{ github.event.issue.number }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

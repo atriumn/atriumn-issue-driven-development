@@ -22,12 +22,14 @@ atriumn-shared-workflows/
 │   ├── curatefor.me.yml              # CurateFor.me specific config
 │   └── schema.yml                    # Configuration schema
 ├── templates/                        # Reusable templates
-│   └── decision-record-template.md   # Decision record template
+│   ├── decision-record-template.md   # Decision record template
+│   └── repo-workflow-template.yml    # Repository workflow template
 ├── test/                             # Test suite
 │   ├── test-validation-scripts.sh    # Validation script tests
 │   └── test-data/                    # Test fixtures (auto-generated)
 └── .github/workflows/                # GitHub Actions workflows
-    └── development-pipeline.yml      # Main development pipeline
+    ├── development-pipeline.yml      # Main development pipeline (Phase 2)
+    └── test-pipeline.yml             # Pipeline testing workflow
 ```
 
 ## Phase 1: Validation Scripts (Current)
@@ -202,13 +204,209 @@ When contributing to this repository:
 3. Ensure all scripts are executable and properly tested
 4. Validate configuration changes against the schema
 
-## Coming in Phase 2
+## Phase 2: GitHub Actions Workflow (Current)
 
-- Complete GitHub Actions workflow automation
-- Multi-repo support and synchronization
-- Decision record automation and templates
-- Integration with project management tools
-- Advanced reporting and analytics
+### Complete Automated Pipeline
+
+The shared workflow provides full automation from issue creation to PR merge:
+
+- **Automated branch creation** and lifecycle management
+- **Real-time validation** at each phase with detailed feedback
+- **Decision record tracking** throughout the entire process
+- **Human approval gates** (configurable) for quality control
+- **Automatic PR creation** and validation
+- **Pipeline completion** with metrics and cleanup
+
+### Workflow Features
+
+#### 🚀 **Pipeline Triggers**
+```bash
+# Start development pipeline
+@claude run development pipeline
+
+# With options
+@claude run development pipeline
+- Base branch: develop
+- Human validation: false
+```
+
+#### 🔄 **Phase Transitions**
+- **Research Complete**: `✅ Research Phase Complete` (Claude comment)
+- **Planning Complete**: `✅ Planning Phase Complete` (Claude comment)  
+- **Implementation Complete**: `✅ Implementation Phase Complete` (Claude comment)
+- **Human Approvals**: `approve research`, `approve plan`, `approve implementation`
+
+#### 📊 **Automated Validation**
+- Research document structure and content validation
+- Implementation plan completeness and success criteria
+- Code quality checks (tests, linting, type checking)
+- PR description and reviewer validation
+
+#### 🎯 **Decision Record Management**
+- Automatic creation and updates throughout pipeline
+- Phase completion tracking with timestamps
+- Implementation metrics and statistics
+- Final completion summary with duration and changes
+
+### Integration Setup
+
+#### 1. Repository Workflow Setup
+
+Copy the template workflow to your repository:
+
+```bash
+# Copy template to your repo
+cp templates/repo-workflow-template.yml .github/workflows/development-pipeline.yml
+```
+
+#### 2. Repository Configuration
+
+Create `.github/development-pipeline-config.yml`:
+
+```yaml
+# Repository-specific configuration
+repo_name: "my-project"
+base_branch: "main"
+thoughts_directory: "thoughts/"
+
+validation:
+  research_min_refs: 5
+  plan_required_sections:
+    - "## Implementation Approach"
+    - "## Phase"
+    - "#### Automated Verification:"
+    - "#### Manual Verification:"
+  implementation_test_commands:
+    - "npm test"
+    - "npm run lint"
+    - "npm run typecheck"
+
+team:
+  default_reviewers: ["@tech-lead"]
+  domain_experts:
+    frontend: "@frontend-expert"
+    backend: "@backend-expert"
+
+notifications:
+  slack_channel: "#engineering"
+  escalation_hours: 4
+
+branches:
+  prefix: "feature/"
+  naming: "issue-{number}-{title-slug}"
+```
+
+#### 3. Workflow Events
+
+The workflow responds to these GitHub events:
+
+- **`issue_comment`**: Pipeline triggers and phase completions
+- **`pull_request`**: PR validation and completion
+- **`workflow_dispatch`**: Manual testing
+
+### Pipeline Modes
+
+#### 🤖 **Fully Automated Mode**
+```bash
+@claude run development pipeline
+- Human validation: false
+```
+- Proceeds automatically through all phases
+- No human approval required
+- Uses validation scripts for quality gates
+
+#### 👥 **Human Approval Mode** (Default)
+```bash
+@claude run development pipeline
+- Human validation: true
+```
+- Pauses for human review at each phase
+- Requires explicit approval to proceed
+- Provides validation reports for review
+
+### Testing the Pipeline
+
+#### Manual Testing
+
+Use the test workflow for validation:
+
+```bash
+# In GitHub Actions
+- Workflow: "Test Development Pipeline"
+- Scenarios: 
+  * full-pipeline-automated
+  * full-pipeline-manual  
+  * research-only
+  * validation-failure
+```
+
+#### Expected Workflow
+
+1. **Issue Comment**: `@claude run development pipeline`
+2. **Branch Creation**: `feature/issue-123-description`
+3. **Research Phase**: Document creation and validation
+4. **Planning Phase**: Implementation plan and approval
+5. **Implementation Phase**: Code changes and testing
+6. **PR Creation**: Automated PR with full context
+7. **PR Validation**: Review and merge process
+8. **Completion**: Issue closure and cleanup
+
+### Monitoring and Observability
+
+#### Decision Records
+
+Each pipeline run creates a comprehensive decision record:
+
+```
+thoughts/shared/decisions/pipeline-issue-123.md
+```
+
+Contains:
+- Issue context and branch information
+- Phase completion timestamps
+- Validation results and metrics  
+- Implementation statistics
+- Final completion summary
+
+#### GitHub Integration
+
+- **Issue Labels**: `branch:feature/issue-123-description`
+- **PR Links**: Automatic linking to research/plan documents
+- **Status Comments**: Real-time progress updates
+- **Metrics**: Commit counts, file changes, duration
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **Branch Creation Fails**
+   - Check repository permissions
+   - Verify base branch exists
+   - Ensure GITHUB_TOKEN has write access
+
+2. **Validation Script Errors**
+   - Verify yq and gh CLI are available
+   - Check document structure and content
+   - Review validation script output
+
+3. **Human Approval Stalled**
+   - Use exact approval phrases: `approve research`
+   - Check notification settings
+   - Review decision record for context
+
+#### Debug Commands
+
+```bash
+# Check pipeline branch
+gh issue view 123 --json labels
+
+# Validate documents manually  
+./scripts/validate-research.sh thoughts/shared/research/doc.md
+./scripts/validate-plan.sh thoughts/shared/plans/plan.md
+
+# Test PR validation
+./scripts/validate-pr.sh 456
+```
 
 ## Dependencies
 

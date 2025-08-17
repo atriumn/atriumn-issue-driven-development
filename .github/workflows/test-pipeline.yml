@@ -1,0 +1,247 @@
+# Test workflow that can be triggered manually
+name: Test Development Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_scenario:
+        description: 'Test scenario to run'
+        required: true
+        type: choice
+        options:
+          - 'full-pipeline-automated'
+          - 'full-pipeline-manual'
+          - 'research-only'
+          - 'validation-failure'
+      test_repo:
+        description: 'Target repository for testing (owner/repo)'
+        required: true
+        type: string
+        default: 'atriumn/test-repo'
+
+jobs:
+  test-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y gh
+          
+      - name: Create test issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create test issue for pipeline
+          ISSUE_BODY="Test issue for development pipeline
+          
+          **Task**: Test the automated development pipeline
+          **Scenario**: ${{ github.event.inputs.test_scenario }}
+          **Test Date**: $(date)
+          **Test Repository**: ${{ github.event.inputs.test_repo }}
+          
+          This is an automated test issue created to validate the development pipeline workflow.
+          "
+          
+          ISSUE_NUMBER=$(gh issue create \
+            --repo ${{ github.event.inputs.test_repo }} \
+            --title "Test: Development Pipeline - ${{ github.event.inputs.test_scenario }}" \
+            --body "$ISSUE_BODY" \
+            --label "test,pipeline" \
+            --json number --jq '.number')
+          
+          echo "number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          echo "Created test issue #$ISSUE_NUMBER in ${{ github.event.inputs.test_repo }}"
+
+      - name: Trigger pipeline based on scenario
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case "${{ github.event.inputs.test_scenario }}" in
+            "full-pipeline-automated")
+              COMMENT="@claude run development pipeline
+              - Base branch: main
+              - Human validation: false
+              - Auto-proceed: true
+              
+              This is a test of the fully automated pipeline."
+              ;;
+            "full-pipeline-manual")
+              COMMENT="@claude run development pipeline
+              - Base branch: main
+              - Human validation: true
+              
+              This is a test of the manual approval pipeline."
+              ;;
+            "research-only")
+              COMMENT="@claude run development pipeline
+              - Base branch: main
+              - Human validation: true
+              - Stop after: research
+              
+              This is a test of research phase only."
+              ;;
+            "validation-failure")
+              COMMENT="@claude run development pipeline
+              - Base branch: main
+              - Human validation: false
+              
+              This test is designed to trigger validation failures for testing error handling."
+              ;;
+            *)
+              COMMENT="@claude run development pipeline
+              
+              Default test scenario."
+              ;;
+          esac
+          
+          gh issue comment ${{ steps.issue.outputs.number }} \
+            --repo ${{ github.event.inputs.test_repo }} \
+            --body "$COMMENT"
+          
+          echo "Pipeline triggered for issue #${{ steps.issue.outputs.number }}"
+
+      - name: Monitor pipeline progress
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "✅ Test pipeline started successfully"
+          echo ""
+          echo "📊 Test Details:"
+          echo "  - Issue: #${{ steps.issue.outputs.number }}"
+          echo "  - Repository: ${{ github.event.inputs.test_repo }}"
+          echo "  - Scenario: ${{ github.event.inputs.test_scenario }}"
+          echo "  - Monitor at: https://github.com/${{ github.event.inputs.test_repo }}/issues/${{ steps.issue.outputs.number }}"
+          echo ""
+          echo "🔍 Expected Behavior:"
+          case "${{ github.event.inputs.test_scenario }}" in
+            "full-pipeline-automated")
+              echo "  - Pipeline should proceed automatically through all phases"
+              echo "  - No human approval required"
+              echo "  - Should create branch, research, plan, implement, and create PR"
+              ;;
+            "full-pipeline-manual")
+              echo "  - Pipeline should pause for human approval at each phase"
+              echo "  - Manual approval required with 'approve research' and 'approve plan'"
+              echo "  - Full pipeline completion after approvals"
+              ;;
+            "research-only")
+              echo "  - Pipeline should complete research phase only"
+              echo "  - Should stop after research validation"
+              echo "  - No automatic progression to planning"
+              ;;
+            "validation-failure")
+              echo "  - Pipeline should encounter validation failures"
+              echo "  - Error handling should be demonstrated"
+              echo "  - Retry mechanisms should be available"
+              ;;
+          esac
+
+  # Monitor test results (runs after 5 minutes)
+  check-test-results:
+    runs-on: ubuntu-latest
+    needs: test-pipeline
+    if: always()
+    steps:
+      - name: Wait for pipeline execution
+        run: sleep 300  # Wait 5 minutes for initial pipeline steps
+        
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y gh
+          
+      - name: Check pipeline status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔍 Checking test results after 5 minutes..."
+          echo ""
+          
+          # Get issue number from previous job
+          ISSUE_NUMBER="${{ needs.test-pipeline.outputs.issue.number }}"
+          
+          # Check if issue has pipeline branch label
+          LABELS=$(gh issue view $ISSUE_NUMBER --repo ${{ github.event.inputs.test_repo }} --json labels --jq '.labels[].name')
+          
+          if echo "$LABELS" | grep -q "branch:"; then
+            BRANCH_NAME=$(echo "$LABELS" | grep "branch:" | sed 's/branch://')
+            echo "✅ Pipeline branch created: $BRANCH_NAME"
+            
+            # Check if branch exists
+            if gh api repos/${{ github.event.inputs.test_repo }}/branches/$BRANCH_NAME > /dev/null 2>&1; then
+              echo "✅ Branch exists in repository"
+            else
+              echo "❌ Branch not found in repository"
+            fi
+          else
+            echo "❌ No pipeline branch label found"
+          fi
+          
+          # Check for decision record
+          echo ""
+          echo "📋 Issue Comments:"
+          gh issue view $ISSUE_NUMBER --repo ${{ github.event.inputs.test_repo }} --json comments --jq '.comments[].body' | tail -3
+          
+          echo ""
+          echo "🔗 Monitor continued progress at:"
+          echo "   https://github.com/${{ github.event.inputs.test_repo }}/issues/$ISSUE_NUMBER"
+
+  # Final cleanup (runs after 1 hour)
+  cleanup-test:
+    runs-on: ubuntu-latest
+    needs: [test-pipeline, check-test-results]
+    if: always()
+    steps:
+      - name: Wait for test completion
+        run: sleep 3600  # Wait 1 hour total
+        
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y gh
+          
+      - name: Cleanup test resources
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ needs.test-pipeline.outputs.issue.number }}"
+          
+          echo "🧹 Cleaning up test resources..."
+          
+          # Check if issue is still open
+          STATUS=$(gh issue view $ISSUE_NUMBER --repo ${{ github.event.inputs.test_repo }} --json state --jq '.state')
+          
+          if [ "$STATUS" = "OPEN" ]; then
+            echo "📝 Adding cleanup comment to open issue"
+            gh issue comment $ISSUE_NUMBER --repo ${{ github.event.inputs.test_repo }} --body "
+            🧹 **Test Cleanup**
+            
+            This was a test issue for the development pipeline. 
+            Test scenario: ${{ github.event.inputs.test_scenario }}
+            
+            If the pipeline is still running, it will continue to completion.
+            If the pipeline has stalled, this issue can be safely closed.
+            "
+            
+            # For test scenarios, close the issue after adding cleanup comment
+            if [[ "${{ github.event.inputs.test_scenario }}" == *"test"* ]]; then
+              echo "🔒 Closing test issue"
+              gh issue close $ISSUE_NUMBER --repo ${{ github.event.inputs.test_repo }} --reason "not planned"
+            fi
+          else
+            echo "✅ Issue already closed - test completed successfully"
+          fi
+          
+          # Try to clean up any test branches
+          LABELS=$(gh issue view $ISSUE_NUMBER --repo ${{ github.event.inputs.test_repo }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          
+          if echo "$LABELS" | grep -q "branch:"; then
+            BRANCH_NAME=$(echo "$LABELS" | grep "branch:" | sed 's/branch://')
+            echo "🌿 Found test branch: $BRANCH_NAME"
+            
+            # Note: We don't automatically delete branches in case the test is still running
+            echo "ℹ️  Test branch $BRANCH_NAME can be manually deleted if no longer needed"
+          fi
+          
+          echo ""
+          echo "✅ Test cleanup completed"
+          echo "📊 Final test issue: https://github.com/${{ github.event.inputs.test_repo }}/issues/$ISSUE_NUMBER"
