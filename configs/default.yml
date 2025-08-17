@@ -11,7 +11,7 @@ validation:
   research_min_refs: 3
   plan_required_sections: 
     - "## Implementation Approach"
-    - "## Phase"
+    - "## Phase 1:"
     - "#### Automated Verification:"
     - "#### Manual Verification:"
   implementation_test_commands:
