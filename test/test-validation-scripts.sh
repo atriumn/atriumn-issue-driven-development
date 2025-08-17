@@ -140,8 +140,13 @@ EOF
 test_research_validation() {
     echo "🧪 Testing research validation..."
     
-    # Test valid document
-    if "$SCRIPTS_DIR/validate-research.sh" "$TEST_DATA_DIR/valid-research.md" >/dev/null 2>&1; then
+    if [ "$YQ_AVAILABLE" = "false" ]; then
+        log_warn "Skipping research validation test - yq not available"
+        return 0
+    fi
+    
+    # Test valid document (use default config, pass research doc as second param)
+    if "$SCRIPTS_DIR/validate-research.sh" "" "$TEST_DATA_DIR/valid-research.md" >/dev/null 2>&1; then
         log_info "Valid research document passed validation"
     else
         log_error "Valid research document failed validation"
@@ -149,7 +154,7 @@ test_research_validation() {
     fi
     
     # Test invalid document (should fail)
-    if "$SCRIPTS_DIR/validate-research.sh" "$TEST_DATA_DIR/invalid-research.md" >/dev/null 2>&1; then
+    if "$SCRIPTS_DIR/validate-research.sh" "" "$TEST_DATA_DIR/invalid-research.md" >/dev/null 2>&1; then
         log_error "Invalid research document incorrectly passed validation"
         return 1
     else
@@ -157,7 +162,7 @@ test_research_validation() {
     fi
     
     # Test missing file
-    if "$SCRIPTS_DIR/validate-research.sh" "$TEST_DATA_DIR/nonexistent.md" >/dev/null 2>&1; then
+    if "$SCRIPTS_DIR/validate-research.sh" "" "$TEST_DATA_DIR/nonexistent.md" >/dev/null 2>&1; then
         log_error "Nonexistent file incorrectly passed validation"
         return 1
     else
@@ -168,8 +173,13 @@ test_research_validation() {
 test_plan_validation() {
     echo "🧪 Testing plan validation..."
     
-    # Test valid document
-    if "$SCRIPTS_DIR/validate-plan.sh" "$TEST_DATA_DIR/valid-plan.md" >/dev/null 2>&1; then
+    if [ "$YQ_AVAILABLE" = "false" ]; then
+        log_warn "Skipping plan validation test - yq not available"
+        return 0
+    fi
+    
+    # Test valid document (use default config, pass plan doc as second param)
+    if "$SCRIPTS_DIR/validate-plan.sh" "" "$TEST_DATA_DIR/valid-plan.md" >/dev/null 2>&1; then
         log_info "Valid plan document passed validation"
     else
         log_error "Valid plan document failed validation"
@@ -177,7 +187,7 @@ test_plan_validation() {
     fi
     
     # Test invalid document (should fail)
-    if "$SCRIPTS_DIR/validate-plan.sh" "$TEST_DATA_DIR/invalid-plan.md" >/dev/null 2>&1; then
+    if "$SCRIPTS_DIR/validate-plan.sh" "" "$TEST_DATA_DIR/invalid-plan.md" >/dev/null 2>&1; then
         log_error "Invalid plan document incorrectly passed validation"
         return 1
     else
@@ -227,15 +237,19 @@ test_script_dependencies() {
     # Check if scripts handle missing yq gracefully
     if command -v yq >/dev/null 2>&1; then
         log_info "yq is available for testing"
+        YQ_AVAILABLE=true
     else
-        log_warn "yq not available - scripts will show dependency errors (expected)"
+        log_warn "yq not available - skipping validation tests that require yq"
+        YQ_AVAILABLE=false
     fi
     
     # Check if scripts handle missing gh gracefully
     if command -v gh >/dev/null 2>&1; then
         log_info "GitHub CLI is available for testing"
+        GH_AVAILABLE=true
     else
-        log_warn "GitHub CLI not available - PR script will show dependency errors (expected)"
+        log_warn "GitHub CLI not available - skipping PR validation tests"
+        GH_AVAILABLE=false
     fi
 }
 
@@ -248,6 +262,9 @@ run_all_tests() {
     echo "🚀 Starting validation script tests..."
     echo ""
     
+    test_script_dependencies
+    echo ""
+    
     setup_test_data
     
     test_research_validation
@@ -257,9 +274,6 @@ run_all_tests() {
     echo ""
     
     test_help_output
-    echo ""
-    
-    test_script_dependencies
     echo ""
     
     cleanup
@@ -287,11 +301,13 @@ fi
 # Run specific test or all tests
 case "${1:-all}" in
     research)
+        test_script_dependencies
         setup_test_data
         test_research_validation
         cleanup
         ;;
     plan)
+        test_script_dependencies
         setup_test_data
         test_plan_validation
         cleanup
