@@ -63,6 +63,45 @@ jobs:
       - name: Run test suite
         run: |
           echo "🔬 Running validation script tests..."
+          
+          # Debug: Test plan validation directly first
+          echo "🐛 Debug: Testing plan validation directly..."
+          mkdir -p test/test-data
+          cat > test/test-data/debug-plan.md << 'EOF'
+          ---
+          date: 2025-08-17T14:30:00-05:00
+          researcher: test-user
+          topic: "Debug Plan"
+          status: complete
+          ---
+          
+          # Implementation Plan: Debug
+          
+          ## Implementation Approach
+          Debug approach.
+          
+          ## Phase 1: Test
+          Test phase.
+          
+          #### Automated Verification:
+          - `make test` - Run tests
+          
+          #### Manual Verification:
+          - Manual test
+          EOF
+          
+          echo "🔍 Running plan validation with debug output..."
+          if ./scripts/validate-plan.sh "" test/test-data/debug-plan.md; then
+            echo "✅ Debug plan validation passed"
+          else
+            echo "❌ Debug plan validation failed - investigating..."
+            echo "📋 Config contents:"
+            cat configs/default.yml
+            echo "📄 Test document contents:"
+            cat test/test-data/debug-plan.md
+          fi
+          
+          echo "🔬 Running full test suite..."
           ./test/test-validation-scripts.sh all
           
       - name: Workflow validation complete
