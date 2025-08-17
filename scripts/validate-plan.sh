@@ -76,12 +76,6 @@ validate_success_criteria() {
 
 validate_no_open_questions() {
     # Check for unresolved questions or TODOs
-    echo "🐛 Debug: Checking document for open questions..."
-    
-    # Debug: Show what we're checking
-    echo "📄 Document content for debug:"
-    cat "$PLAN_DOC" | head -20
-    
     local issues=("TODO" "FIXME" "XXX" "TBD")
     
     for issue in "${issues[@]}"; do
@@ -92,15 +86,14 @@ validate_no_open_questions() {
         fi
     done
     
-    # Temporarily disabled - Debug the issue
-    # # Check for question marks pattern (???)
-    # if grep -q "???" "$PLAN_DOC"; then
-    #     echo "❌ Found unresolved question or TODO: ???"
-    #     echo "   Implementation plan must resolve all questions before proceeding"
-    #     exit 1
-    # fi
+    # Check for question marks pattern (???) - using simpler approach
+    if grep -q "???" "$PLAN_DOC"; then
+        echo "❌ Found unresolved question or TODO: ???"
+        echo "   Implementation plan must resolve all questions before proceeding"
+        exit 1
+    fi
     
-    echo "✅ No unresolved questions found (TODO/FIXME/XXX/TBD check only)"
+    echo "✅ No unresolved questions found"
 }
 
 validate_phase_structure() {
