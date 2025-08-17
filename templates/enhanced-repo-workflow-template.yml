@@ -1,0 +1,1227 @@
+# Copy this to your repo: .github/workflows/development-pipeline-enhanced.yml
+# Enhanced Development Pipeline with Branch Safety & Context Preservation
+name: Enhanced Development Pipeline
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, closed]
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  # Load configuration for all jobs
+  load-config:
+    runs-on: ubuntu-latest
+    outputs:
+      base_branch: ${{ steps.config.outputs.base_branch }}
+      thoughts_dir: ${{ steps.config.outputs.thoughts_dir }}
+      config_loaded: ${{ steps.config.outputs.config_loaded }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: .github/shared-workflows
+          
+      - name: Install dependencies
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          sudo apt-get update && sudo apt-get install -y gh
+          
+      - name: Load pipeline configuration
+        id: config
+        run: |
+          # Load from repo-specific config or use defaults
+          if [ -f ".github/development-pipeline-config.yml" ]; then
+            CONFIG_FILE=".github/development-pipeline-config.yml"
+          else
+            CONFIG_FILE=".github/shared-workflows/configs/default.yml"
+          fi
+          
+          BASE_BRANCH=$(yq eval '.base_branch' "$CONFIG_FILE")
+          THOUGHTS_DIR=$(yq eval '.thoughts_directory' "$CONFIG_FILE")
+          
+          echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+          echo "thoughts_dir=$THOUGHTS_DIR" >> $GITHUB_OUTPUT
+          echo "config_loaded=true" >> $GITHUB_OUTPUT
+          
+          echo "✅ Configuration loaded: base=$BASE_BRANCH, thoughts=$THOUGHTS_DIR"
+
+  # Task 1: Enhanced Branch Management - Branch Safety Checks
+  validate-branch-continuity:
+    if: github.event_name == 'issue_comment'
+    needs: load-config
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: ${{ steps.branch-check.outputs.expected_branch }}
+      branch_valid: ${{ steps.branch-state.outputs.branch_valid }}
+      commits_ahead: ${{ steps.branch-state.outputs.commits_ahead }}
+      commits_behind: ${{ steps.branch-state.outputs.commits_behind }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Ensure Pipeline Branch Exists
+        id: branch-check
+        run: |
+          # Get expected branch from issue labels
+          EXPECTED_BRANCH=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")')
+          
+          if [ -z "$EXPECTED_BRANCH" ]; then
+            echo "❌ No pipeline branch found in issue labels"
+            echo "This indicates the pipeline was not properly started."
+            gh issue comment ${{ github.event.issue.number }} --body "
+            ❌ **Pipeline Branch Error**
+            
+            No pipeline branch found for this issue. This usually means:
+            - Pipeline was not started with '@claude run development pipeline'
+            - Issue labels were modified incorrectly
+            - Pipeline initialization failed
+            
+            **To Fix**: Start the pipeline with '@claude run development pipeline'
+            "
+            exit 1
+          fi
+          
+          echo "expected_branch=$EXPECTED_BRANCH" >> $GITHUB_OUTPUT
+          echo "✅ Expected pipeline branch: $EXPECTED_BRANCH"
+
+      - name: Validate Branch Exists in Repository
+        run: |
+          BRANCH_NAME="${{ steps.branch-check.outputs.expected_branch }}"
+          
+          # Check if branch exists in remote
+          if ! git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "❌ Pipeline branch does not exist in repository: $BRANCH_NAME"
+            gh issue comment ${{ github.event.issue.number }} --body "
+            ❌ **Missing Pipeline Branch**
+            
+            Expected branch \`$BRANCH_NAME\` does not exist in repository.
+            
+            **Possible Causes:**
+            - Branch was deleted manually
+            - Pipeline initialization failed
+            - Branch name mismatch
+            
+            **To Fix**: Restart the pipeline to recreate the branch.
+            "
+            exit 1
+          fi
+          
+          echo "✅ Pipeline branch exists: $BRANCH_NAME"
+
+      - name: Check Branch State
+        id: branch-state
+        run: |
+          BRANCH_NAME="${{ steps.branch-check.outputs.expected_branch }}"
+          BASE_BRANCH="${{ needs.load-config.outputs.base_branch }}"
+          
+          # Get branch info
+          git fetch origin "$BRANCH_NAME"
+          git checkout "$BRANCH_NAME"
+          
+          # Check if branch is ahead of base
+          COMMITS_AHEAD=$(git rev-list --count HEAD ^origin/$BASE_BRANCH)
+          COMMITS_BEHIND=$(git rev-list --count origin/$BASE_BRANCH ^HEAD)
+          
+          echo "commits_ahead=$COMMITS_AHEAD" >> $GITHUB_OUTPUT
+          echo "commits_behind=$COMMITS_BEHIND" >> $GITHUB_OUTPUT
+          echo "branch_valid=true" >> $GITHUB_OUTPUT
+          
+          if [ "$COMMITS_AHEAD" -eq 0 ]; then
+            echo "⚠️ Branch has no commits ahead of $BASE_BRANCH"
+          fi
+          
+          if [ "$COMMITS_BEHIND" -gt 0 ]; then
+            echo "⚠️ Branch is $COMMITS_BEHIND commits behind $BASE_BRANCH"
+          fi
+          
+          echo "✅ Branch state: +$COMMITS_AHEAD/-$COMMITS_BEHIND vs $BASE_BRANCH"
+
+  # Task 2: Context Validation Between Phases
+  validate-context-continuity:
+    if: github.event_name == 'issue_comment'
+    needs: [load-config, validate-branch-continuity]
+    runs-on: ubuntu-latest
+    outputs:
+      decision_record_path: ${{ steps.context.outputs.decision_record_path }}
+      research_doc_path: ${{ steps.context.outputs.research_doc_path }}
+      plan_doc_path: ${{ steps.context.outputs.plan_doc_path }}
+      current_phase: ${{ steps.context.outputs.current_phase }}
+      context_valid: ${{ steps.validate-phase-context.outputs.context_valid }}
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Get pipeline branch
+        id: branch
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+
+      - name: Validate Decision Record Context
+        id: context
+        run: |
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          DECISION_RECORD="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
+          
+          # Check decision record exists
+          if [ ! -f "$DECISION_RECORD" ]; then
+            echo "❌ Decision record missing: $DECISION_RECORD"
+            gh issue comment ${{ github.event.issue.number }} --body "
+            ❌ **Context Error: Missing Decision Record**
+            
+            The pipeline decision record is missing: \`$DECISION_RECORD\`
+            
+            This indicates a serious pipeline integrity issue. The decision record is required for maintaining context between phases.
+            
+            **Action Required**: Restart the pipeline from the beginning.
+            "
+            exit 1
+          fi
+          
+          echo "decision_record_path=$DECISION_RECORD" >> $GITHUB_OUTPUT
+          echo "✅ Decision record exists: $DECISION_RECORD"
+          
+          # Determine current phase based on decision record content
+          if grep -q "## Implementation Phase (Complete" "$DECISION_RECORD"; then
+            CURRENT_PHASE="pr-creation"
+          elif grep -q "## Planning Phase (Complete" "$DECISION_RECORD"; then
+            CURRENT_PHASE="implementation"
+          elif grep -q "## Research Phase (Complete" "$DECISION_RECORD"; then
+            CURRENT_PHASE="planning"
+          else
+            CURRENT_PHASE="research"
+          fi
+          
+          echo "current_phase=$CURRENT_PHASE" >> $GITHUB_OUTPUT
+          echo "✅ Current phase: $CURRENT_PHASE"
+
+      - name: Validate Phase-Specific Context
+        id: validate-phase-context
+        run: |
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          CURRENT_PHASE="${{ steps.context.outputs.current_phase }}"
+          
+          case "$CURRENT_PHASE" in
+            "planning")
+              # Planning phase needs research document
+              RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+              if [ -z "$RESEARCH_DOC" ]; then
+                echo "❌ Planning phase requires research document"
+                gh issue comment ${{ github.event.issue.number }} --body "
+                ❌ **Context Error: Missing Research**
+                
+                Planning phase requires a completed research document, but none was found.
+                
+                **Expected Path**: \`$THOUGHTS_DIR/shared/research/*issue-${{ github.event.issue.number }}*.md\`
+                
+                **Action Required**: Complete the research phase first.
+                "
+                exit 1
+              fi
+              echo "research_doc_path=$RESEARCH_DOC" >> $GITHUB_OUTPUT
+              echo "✅ Research document found: $RESEARCH_DOC"
+              ;;
+              
+            "implementation")
+              # Implementation phase needs both research and plan
+              RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+              PLAN_DOC=$(find "$THOUGHTS_DIR/shared/plans" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+              
+              if [ -z "$RESEARCH_DOC" ] || [ -z "$PLAN_DOC" ]; then
+                echo "❌ Implementation phase requires both research and plan documents"
+                gh issue comment ${{ github.event.issue.number }} --body "
+                ❌ **Context Error: Missing Prerequisites**
+                
+                Implementation phase requires both research and plan documents:
+                - Research: $([ -n "$RESEARCH_DOC" ] && echo "✅ Found" || echo "❌ Missing")
+                - Plan: $([ -n "$PLAN_DOC" ] && echo "✅ Found" || echo "❌ Missing")
+                
+                **Action Required**: Complete research and planning phases first.
+                "
+                exit 1
+              fi
+              
+              echo "research_doc_path=$RESEARCH_DOC" >> $GITHUB_OUTPUT
+              echo "plan_doc_path=$PLAN_DOC" >> $GITHUB_OUTPUT
+              echo "✅ All required documents found for implementation"
+              ;;
+              
+            "pr-creation")
+              # PR creation needs all documents
+              RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+              PLAN_DOC=$(find "$THOUGHTS_DIR/shared/plans" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+              
+              if [ -z "$RESEARCH_DOC" ] || [ -z "$PLAN_DOC" ]; then
+                echo "❌ PR creation requires all pipeline documents"
+                exit 1
+              fi
+              
+              echo "research_doc_path=$RESEARCH_DOC" >> $GITHUB_OUTPUT
+              echo "plan_doc_path=$PLAN_DOC" >> $GITHUB_OUTPUT
+              echo "✅ All required documents found for PR creation"
+              ;;
+          esac
+          
+          echo "context_valid=true" >> $GITHUB_OUTPUT
+
+      - name: Validate Document Integrity
+        run: |
+          DECISION_RECORD="${{ steps.context.outputs.decision_record_path }}"
+          
+          # Check decision record has required structure
+          REQUIRED_SECTIONS=("## Issue Context" "## Current Status")
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            if ! grep -q "$section" "$DECISION_RECORD"; then
+              echo "❌ Decision record missing section: $section"
+              gh issue comment ${{ github.event.issue.number }} --body "
+              ❌ **Context Error: Malformed Decision Record**
+              
+              Decision record is missing required section: \`$section\`
+              
+              This indicates the decision record was corrupted or manually edited incorrectly.
+              
+              **Action Required**: Review and fix the decision record, or restart the pipeline.
+              "
+              exit 1
+            fi
+          done
+          
+          echo "✅ Decision record structure validated"
+
+  # Parse comment triggers with enhanced context
+  parse-comment:
+    if: github.event_name == 'issue_comment'
+    needs: [load-config, validate-branch-continuity, validate-context-continuity]
+    runs-on: ubuntu-latest
+    outputs:
+      trigger: ${{ steps.parse.outputs.trigger }}
+      comment_body: ${{ steps.parse.outputs.comment_body }}
+      issue_number: ${{ steps.parse.outputs.issue_number }}
+      action_valid: ${{ steps.parse.outputs.action_valid }}
+    steps:
+      - name: Parse comment for triggers
+        id: parse
+        run: |
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          
+          echo "comment_body=$COMMENT_BODY" >> $GITHUB_OUTPUT
+          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          
+          # Enhanced trigger detection with context validation
+          if echo "$COMMENT_BODY" | grep -q "✅ Research Phase Complete"; then
+            echo "trigger=validate-research" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "✅ Planning Phase Complete"; then
+            echo "trigger=validate-plan" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "✅ Implementation Phase Complete"; then
+            echo "trigger=validate-implementation" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "@claude run development pipeline"; then
+            echo "trigger=start-pipeline" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "@claude retry research"; then
+            echo "trigger=retry-research" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "@claude retry planning"; then
+            echo "trigger=retry-planning" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "@claude retry implementation"; then
+            echo "trigger=retry-implementation" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "@claude restart pipeline"; then
+            echo "trigger=restart-pipeline" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "continue implementing remaining items"; then
+            echo "trigger=continue-partial-implementation" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "accept current implementation"; then
+            echo "trigger=accept-partial-implementation" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT_BODY" | grep -q "modify implementation:"; then
+            echo "trigger=modify-implementation-scope" >> $GITHUB_OUTPUT
+          else
+            echo "trigger=none" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "action_valid=true" >> $GITHUB_OUTPUT
+
+  # Enhanced start pipeline with decision record creation
+  start-pipeline:
+    if: needs.parse-comment.outputs.trigger == 'start-pipeline'
+    needs: [load-config, parse-comment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create pipeline branch and decision record
+        run: |
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          ISSUE_TITLE=$(gh issue view $ISSUE_NUMBER --json title --jq '.title')
+          ISSUE_BODY=$(gh issue view $ISSUE_NUMBER --json body --jq '.body')
+          TITLE_SLUG=$(echo "$ISSUE_TITLE" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          BRANCH_NAME="feature/issue-$ISSUE_NUMBER-$TITLE_SLUG"
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          
+          # Create branch if it doesn't exist
+          if ! git rev-parse --verify "origin/$BRANCH_NAME" >/dev/null 2>&1; then
+            git checkout -b "$BRANCH_NAME"
+            
+            # Create directory structure
+            mkdir -p "$THOUGHTS_DIR/shared/research"
+            mkdir -p "$THOUGHTS_DIR/shared/plans"
+            mkdir -p "$THOUGHTS_DIR/shared/decisions"
+            
+            # Create initial decision record
+            DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md"
+            cat > "$DECISION_FILE" << EOF
+          # Development Pipeline Decision Record - Issue #$ISSUE_NUMBER
+
+          ## Issue Context
+          - **Issue Title**: $ISSUE_TITLE
+          - **Issue Number**: #$ISSUE_NUMBER
+          - **Pipeline Branch**: \`$BRANCH_NAME\`
+          - **Base Branch**: \`${{ needs.load-config.outputs.base_branch }}\`
+          - **Started**: $(date -Iseconds)
+          - **Requestor**: @${{ github.event.comment.user.login }}
+
+          ## Original Issue Description
+          $ISSUE_BODY
+
+          ## Current Status
+          - **Phase**: Research (Starting)
+          - **Branch State**: Clean, created from ${{ needs.load-config.outputs.base_branch }}
+          - **Context Validation**: ✅ Passed
+          - **Decision Record**: ✅ Created
+
+          ## Research Phase (Starting)
+          - **Status**: Awaiting research document creation
+          - **Expected Path**: \`$THOUGHTS_DIR/shared/research/research-issue-$ISSUE_NUMBER.md\`
+          - **Validation Trigger**: Comment "✅ Research Phase Complete" when done
+          - **Started**: $(date -Iseconds)
+
+          ## Pipeline Progress
+          - [❌] Research Phase
+          - [❌] Planning Phase  
+          - [❌] Implementation Phase
+          - [❌] PR Creation
+
+          ---
+          *This decision record tracks the complete development pipeline lifecycle for issue #$ISSUE_NUMBER*
+          EOF
+            
+            git add .
+            git commit -m "Pipeline: Initialize development pipeline for issue #$ISSUE_NUMBER
+
+          - Created pipeline branch: $BRANCH_NAME
+          - Initialized decision record
+          - Set up directory structure
+          - Ready for research phase"
+            git push origin "$BRANCH_NAME"
+            echo "✅ Created branch: $BRANCH_NAME"
+          fi
+          
+          # Add branch label
+          gh label create "branch:$BRANCH_NAME" --color "0366d6" --description "Pipeline branch" || true
+          gh issue edit $ISSUE_NUMBER --add-label "branch:$BRANCH_NAME"
+          
+          gh issue comment $ISSUE_NUMBER --body "
+          🚀 **Development Pipeline Started**
+          
+          **Branch**: \`$BRANCH_NAME\` (created from \`${{ needs.load-config.outputs.base_branch }}\`)
+          **Decision Record**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md\`
+          **Next Step**: Please begin research following the methodology
+          
+          **Research Requirements:**
+          - Create research document: \`$THOUGHTS_DIR/shared/research/research-issue-$ISSUE_NUMBER.md\`
+          - Use YAML frontmatter with metadata
+          - Include code references with file:line format
+          - Follow research methodology guidelines
+          - Comment \`✅ Research Phase Complete\` when done
+          
+          **Context Preservation:**
+          - All pipeline context is tracked in the decision record
+          - Branch state and progress are automatically monitored
+          - Error recovery mechanisms are active
+          "
+
+  # Enhanced validation with context checks
+  validate-research:
+    if: needs.parse-comment.outputs.trigger == 'validate-research'
+    needs: [load-config, validate-branch-continuity, validate-context-continuity, parse-comment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: .github/shared-workflows
+
+      - name: Install dependencies
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Switch to pipeline branch
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+
+      - name: Validate research with context
+        run: |
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          
+          # Find research document
+          RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-$ISSUE_NUMBER*" -type f | head -1)
+          
+          if [ -z "$RESEARCH_DOC" ]; then
+            gh issue comment $ISSUE_NUMBER --body "❌ **Research Validation Failed**: No research document found for issue #$ISSUE_NUMBER"
+            exit 1
+          fi
+          
+          # Run validation with enhanced context
+          if ./.github/shared-workflows/scripts/validate-research.sh "" "$RESEARCH_DOC"; then
+            # Update decision record
+            DECISION_RECORD="$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md"
+            
+            cat >> "$DECISION_RECORD" << EOF
+
+          ## Research Phase (Complete ✅)
+          - **Status**: Validation passed
+          - **Document**: \`$RESEARCH_DOC\`
+          - **Validated**: $(date -Iseconds)
+          - **Validator**: GitHub Actions
+          - **Next Phase**: Planning
+
+          ## Planning Phase (Starting)
+          - **Status**: Awaiting implementation plan
+          - **Expected Path**: \`$THOUGHTS_DIR/shared/plans/plan-issue-$ISSUE_NUMBER.md\`
+          - **Validation Trigger**: Comment "✅ Planning Phase Complete" when done
+          - **Started**: $(date -Iseconds)
+          
+          ## Pipeline Progress
+          - [✅] Research Phase
+          - [❌] Planning Phase  
+          - [❌] Implementation Phase
+          - [❌] PR Creation
+          EOF
+            
+            git add "$DECISION_RECORD"
+            git commit -m "Pipeline: Research phase complete for issue #$ISSUE_NUMBER"
+            git push origin "$BRANCH_NAME"
+            
+            gh issue comment $ISSUE_NUMBER --body "
+            ✅ **Research Validation Passed**
+            
+            **Document**: \`$RESEARCH_DOC\`
+            **Decision Record Updated**: \`$DECISION_RECORD\`
+            **Next Step**: Create implementation plan
+            - Expected path: \`$THOUGHTS_DIR/shared/plans/plan-issue-$ISSUE_NUMBER.md\`
+            - Comment \`✅ Planning Phase Complete\` when done
+            "
+          else
+            gh issue comment $ISSUE_NUMBER --body "❌ **Research Validation Failed**: Please review document structure and content"
+            exit 1
+          fi
+
+  # Task 4: Partial Completion Detection
+  detect-partial-completion:
+    if: needs.parse-comment.outputs.trigger == 'validate-implementation'
+    needs: [load-config, validate-branch-continuity, validate-context-continuity, parse-comment]
+    runs-on: ubuntu-latest
+    outputs:
+      completion_percentage: ${{ steps.analyze.outputs.completion_percentage }}
+      completed_items: ${{ steps.analyze.outputs.completed_items }}
+      remaining_items: ${{ steps.analyze.outputs.remaining_items }}
+      total_phases: ${{ steps.analyze.outputs.total_phases }}
+      completed_phases: ${{ steps.analyze.outputs.completed_phases }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Switch to pipeline branch
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+
+      - name: Analyze Implementation Completion
+        id: analyze
+        run: |
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          PLAN_DOC="${{ needs.validate-context-continuity.outputs.plan_doc_path }}"
+          BASE_BRANCH="${{ needs.load-config.outputs.base_branch }}"
+          
+          if [ -z "$PLAN_DOC" ] || [ ! -f "$PLAN_DOC" ]; then
+            echo "No plan document found - cannot analyze completion"
+            exit 1
+          fi
+          
+          # Extract phases from plan
+          TOTAL_PHASES=$(grep -c "^## Phase [0-9]" "$PLAN_DOC")
+          echo "total_phases=$TOTAL_PHASES" >> $GITHUB_OUTPUT
+          
+          # Check which phases are complete based on commits and files
+          COMPLETED_PHASES=0
+          COMPLETED_ITEMS=""
+          REMAINING_ITEMS=""
+          
+          echo "📊 Analyzing $TOTAL_PHASES phases for completion..."
+          
+          # Analyze each phase
+          for i in $(seq 1 $TOTAL_PHASES); do
+            echo "🔍 Analyzing Phase $i..."
+            
+            # Get phase description
+            PHASE_SECTION=$(sed -n "/^## Phase $i:/,/^## Phase $((i+1)):/p" "$PLAN_DOC" | head -n -1)
+            if [ -z "$PHASE_SECTION" ]; then
+              PHASE_SECTION=$(sed -n "/^## Phase $i:/,\$p" "$PLAN_DOC")
+            fi
+            
+            PHASE_TITLE=$(echo "$PHASE_SECTION" | head -1 | sed "s/^## Phase $i: *//")
+            
+            # Look for files that should be modified in this phase
+            PHASE_FILES=$(echo "$PHASE_SECTION" | grep -o '\`[^`]*\.[a-z]*\`' | tr -d '`' | sort -u || echo "")
+            
+            PHASE_COMPLETE=true
+            MISSING_FILES=""
+            
+            if [ -n "$PHASE_FILES" ]; then
+              for file in $PHASE_FILES; do
+                if [ -f "$file" ]; then
+                  # Check if file was modified in this branch
+                  if git diff --name-only "origin/$BASE_BRANCH" | grep -q "^$file$"; then
+                    echo "  ✅ $file - modified"
+                  else
+                    echo "  ⚠️  $file - exists but not modified in this branch"
+                    # Consider it incomplete if not modified
+                    PHASE_COMPLETE=false
+                    MISSING_FILES="$MISSING_FILES$file "
+                  fi
+                else
+                  echo "  ❌ $file - missing"
+                  PHASE_COMPLETE=false
+                  MISSING_FILES="$MISSING_FILES$file "
+                fi
+              done
+            else
+              # No specific files mentioned, check for any changes related to phase
+              PHASE_KEYWORDS=$(echo "$PHASE_SECTION" | tr '[:upper:]' '[:lower:]' | grep -o '\b[a-z]\{4,\}\b' | head -5 | tr '\n' '|' | sed 's/|$//')
+              
+              if [ -n "$PHASE_KEYWORDS" ]; then
+                # Check if any commits mention phase-related keywords
+                PHASE_COMMITS=$(git log --oneline "origin/$BASE_BRANCH".."HEAD" | grep -iE "$PHASE_KEYWORDS" || echo "")
+                if [ -z "$PHASE_COMMITS" ]; then
+                  PHASE_COMPLETE=false
+                  echo "  ❌ No commits found related to: $PHASE_KEYWORDS"
+                else
+                  echo "  ✅ Found commits related to phase keywords"
+                fi
+              else
+                echo "  ⚠️  Cannot determine completion - no files or keywords identified"
+                PHASE_COMPLETE=false
+              fi
+            fi
+            
+            if [ "$PHASE_COMPLETE" = true ]; then
+              COMPLETED_PHASES=$((COMPLETED_PHASES + 1))
+              COMPLETED_ITEMS="$COMPLETED_ITEMS- ✅ Phase $i: $PHASE_TITLE\n"
+              echo "  ✅ Phase $i complete"
+            else
+              REMAINING_ITEMS="$REMAINING_ITEMS- ❌ Phase $i: $PHASE_TITLE"
+              if [ -n "$MISSING_FILES" ]; then
+                REMAINING_ITEMS="$REMAINING_ITEMS (missing: $MISSING_FILES)"
+              fi
+              REMAINING_ITEMS="$REMAINING_ITEMS\n"
+              echo "  ❌ Phase $i incomplete"
+            fi
+          done
+          
+          # Calculate completion percentage
+          if [ $TOTAL_PHASES -gt 0 ]; then
+            COMPLETION_PCT=$((COMPLETED_PHASES * 100 / TOTAL_PHASES))
+          else
+            COMPLETION_PCT=0
+          fi
+          
+          echo "completion_percentage=$COMPLETION_PCT" >> $GITHUB_OUTPUT
+          echo "completed_phases=$COMPLETED_PHASES" >> $GITHUB_OUTPUT
+          echo "completed_items=$COMPLETED_ITEMS" >> $GITHUB_OUTPUT
+          echo "remaining_items=$REMAINING_ITEMS" >> $GITHUB_OUTPUT
+          
+          echo "📊 Analysis complete: $COMPLETED_PHASES/$TOTAL_PHASES phases ($COMPLETION_PCT%)"
+
+  # Handle partial completion scenarios
+  handle-partial-completion:
+    needs: [load-config, validate-branch-continuity, validate-context-continuity, parse-comment, detect-partial-completion]
+    if: needs.detect-partial-completion.outputs.completion_percentage != '100' && needs.detect-partial-completion.outputs.completion_percentage != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Switch to pipeline branch
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+
+      - name: Update Decision Record with Partial Status
+        run: |
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ needs.parse-comment.outputs.issue_number }}.md"
+          COMPLETION="${{ needs.detect-partial-completion.outputs.completion_percentage }}"
+          
+          cat >> "$DECISION_FILE" << EOF
+
+          ### Implementation Status Update - Partial Completion
+          - **Date**: $(date -Iseconds)
+          - **Completion**: ${COMPLETION}%
+          - **Status**: Partial implementation detected
+          - **Completed Phases**: ${{ needs.detect-partial-completion.outputs.completed_phases }}/${{ needs.detect-partial-completion.outputs.total_phases }}
+
+          #### Completed Items:
+          ${{ needs.detect-partial-completion.outputs.completed_items }}
+
+          #### Remaining Items:
+          ${{ needs.detect-partial-completion.outputs.remaining_items }}
+
+          #### Next Action Required:
+          Human decision needed on how to proceed with remaining $((100 - ${COMPLETION}))% of implementation.
+
+          EOF
+          
+          git add "$DECISION_FILE"
+          git commit -m "Pipeline: Implementation partial completion status for issue #${{ needs.parse-comment.outputs.issue_number }}"
+          git push origin "$BRANCH_NAME"
+
+      - name: Request Human Decision on Partial Completion
+        run: |
+          COMPLETION="${{ needs.detect-partial-completion.outputs.completion_percentage }}"
+          REMAINING=$((100 - COMPLETION))
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          
+          gh issue comment ${{ needs.parse-comment.outputs.issue_number }} --body "
+          ⚠️ **Partial Implementation Detected**
+          
+          **Completion Status**: ${COMPLETION}% complete
+          **Remaining Work**: ${REMAINING}% of planned implementation
+          **Completed Phases**: ${{ needs.detect-partial-completion.outputs.completed_phases }}/${{ needs.detect-partial-completion.outputs.total_phases }}
+          
+          **Completed Items:**
+          ${{ needs.detect-partial-completion.outputs.completed_items }}
+          
+          **Remaining Items:**
+          ${{ needs.detect-partial-completion.outputs.remaining_items }}
+          
+          **Decision Required**: 
+          @${{ github.event.issue.user.login }} How would you like to proceed?
+          
+          **Options:**
+          - 🔄 **Continue**: Comment \`continue implementing remaining items\`
+          - ✂️ **Reduce Scope**: Comment \`accept current implementation\` (will create PR with current state)
+          - 🔀 **Modify Plan**: Comment \`modify implementation: [specific changes]\`
+          - ❌ **Stop**: Comment \`cancel implementation\`
+          
+          **Current Branch**: \`$BRANCH_NAME\`
+          **Decision Record**: \`${{ needs.load-config.outputs.thoughts_dir }}/shared/decisions/pipeline-issue-${{ needs.parse-comment.outputs.issue_number }}.md\`
+          "
+
+  # Validate complete implementation
+  validate-complete-implementation:
+    needs: [load-config, validate-branch-continuity, validate-context-continuity, parse-comment, detect-partial-completion]
+    if: needs.detect-partial-completion.outputs.completion_percentage == '100'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: .github/shared-workflows
+
+      - name: Switch to pipeline branch
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+
+      - name: Run implementation validation
+        run: |
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          
+          # Run full implementation validation
+          if ./.github/shared-workflows/scripts/validate-implementation.sh "$BRANCH_NAME"; then
+            # Update decision record
+            THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+            DECISION_RECORD="$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md"
+            
+            cat >> "$DECISION_RECORD" << EOF
+
+          ## Implementation Phase (Complete ✅)
+          - **Status**: Full implementation validation passed
+          - **Completion**: 100%
+          - **Phases Complete**: ${{ needs.detect-partial-completion.outputs.total_phases }}/${{ needs.detect-partial-completion.outputs.total_phases }}
+          - **Validated**: $(date -Iseconds)
+          - **Validator**: GitHub Actions
+          - **Next Phase**: PR Creation
+
+          ## PR Creation Phase (Ready)
+          - **Status**: Ready for pull request creation
+          - **Branch**: \`$BRANCH_NAME\`
+          - **Target**: \`${{ needs.load-config.outputs.base_branch }}\`
+          
+          ## Pipeline Progress
+          - [✅] Research Phase
+          - [✅] Planning Phase  
+          - [✅] Implementation Phase
+          - [❌] PR Creation
+          EOF
+            
+            git add "$DECISION_RECORD"
+            git commit -m "Pipeline: Implementation phase complete for issue #$ISSUE_NUMBER"
+            git push origin "$BRANCH_NAME"
+            
+            gh issue comment $ISSUE_NUMBER --body "
+            ✅ **Implementation Validation Passed**
+            
+            **Branch**: \`$BRANCH_NAME\`
+            **Completion**: 100% - All planned phases implemented
+            **Decision Record Updated**: \`$DECISION_RECORD\`
+            **Next Step**: Create pull request for review
+            
+            All implementation phases have been completed successfully. Ready to create pull request.
+            "
+          else
+            gh issue comment $ISSUE_NUMBER --body "❌ **Implementation Validation Failed**: Please review implementation and fix issues"
+            exit 1
+          fi
+
+  # Task 3: Error Recovery - Retry mechanisms
+  retry-research:
+    if: needs.parse-comment.outputs.trigger == 'retry-research'
+    needs: [load-config, validate-branch-continuity, validate-context-continuity, parse-comment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clear Previous Research Attempt
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+          
+          # Remove failed research document if it exists
+          find "$THOUGHTS_DIR/shared/research" -name "*issue-$ISSUE_NUMBER*" -delete || true
+          
+          # Reset decision record to pre-research state
+          DECISION_RECORD="$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md"
+          
+          # Remove everything after the initial research phase start
+          sed -i '/## Research Phase/,$d' "$DECISION_RECORD"
+          
+          cat >> "$DECISION_RECORD" << EOF
+
+          ## Research Phase (Retry)
+          - **Status**: Retrying after validation failure
+          - **Started**: $(date -Iseconds)
+          - **Trigger**: Retry requested by @${{ github.event.comment.user.login }}
+          - **Previous Attempt**: Failed validation
+
+          EOF
+          
+          git add .
+          git commit -m "Pipeline: Reset for research retry on issue #$ISSUE_NUMBER"
+          git push origin "$BRANCH_NAME"
+
+      - name: Trigger Research Retry
+        run: |
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          
+          gh issue comment $ISSUE_NUMBER --body "
+          🔄 **Research Phase Retry**
+          
+          Previous research attempt failed validation. Retrying with clean state.
+          
+          **This is a RETRY** - Previous attempt failed validation. Please ensure:
+          - All required sections are present and complete
+          - Minimum 3 file references with \`filename.ext:line\` format
+          - Valid YAML frontmatter with all required fields
+          - No placeholder text (TODO, FIXME, etc.)
+          
+          **Expected Path**: \`$THOUGHTS_DIR/shared/research/research-issue-$ISSUE_NUMBER.md\`
+          **Validation Trigger**: Comment \`✅ Research Phase Complete\` when done
+          
+          ---
+          
+          @claude Please research the codebase for this issue following our research methodology.
+          
+          **Research Requirements (Retry):**
+          - Read and understand the issue requirements thoroughly
+          - Search through the codebase to understand current implementation
+          - Identify relevant files, patterns, and architectural decisions
+          - Document findings with specific file references
+          - Provide architectural insights and recommendations
+          "
+
+  # Restart entire pipeline
+  restart-pipeline:
+    if: needs.parse-comment.outputs.trigger == 'restart-pipeline'
+    needs: [load-config, parse-comment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clean Up Previous Pipeline Attempt
+        run: |
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          
+          # Get current branch if it exists
+          CURRENT_BRANCH=$(gh issue view $ISSUE_NUMBER --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")' || echo "")
+          
+          if [ -n "$CURRENT_BRANCH" ]; then
+            echo "🧹 Cleaning up previous branch: $CURRENT_BRANCH"
+            # Delete branch and remove label
+            git push origin --delete "$CURRENT_BRANCH" || true
+            gh issue edit $ISSUE_NUMBER --remove-label "branch:$CURRENT_BRANCH" || true
+          fi
+          
+          # Remove any pipeline-related labels
+          gh issue edit $ISSUE_NUMBER --remove-label "pipeline-paused" || true
+
+      - name: Restart Pipeline Fresh
+        run: |
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          BASE_BRANCH="${{ needs.load-config.outputs.base_branch }}"
+          
+          gh issue comment $ISSUE_NUMBER --body "
+          🔄 **Pipeline Restart**
+          
+          Previous pipeline attempt has been cleaned up. Starting fresh.
+          
+          **Cleanup Actions:**
+          - Previous branch deleted
+          - Pipeline labels removed
+          - Clean slate for new attempt
+          
+          ---
+          
+          🚀 **Development Pipeline Starting**
+          
+          @claude run development pipeline:
+          - Base branch: $BASE_BRANCH
+          - Context preservation: ✅ Active
+          - Error recovery: ✅ Active
+          - Branch safety: ✅ Active
+          
+          **Note**: This is a fresh start. All previous pipeline artifacts have been removed.
+          "
+
+  # Continue partial implementation
+  continue-partial-implementation:
+    if: needs.parse-comment.outputs.trigger == 'continue-partial-implementation'
+    needs: [load-config, validate-branch-continuity, validate-context-continuity, parse-comment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update Decision Record with Continue Decision
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ needs.parse-comment.outputs.issue_number }}.md"
+          
+          git checkout "$BRANCH_NAME"
+          git pull origin "$BRANCH_NAME"
+          
+          # Get completion status from latest partial completion check
+          PARTIAL_INFO=$(grep -A 10 "Implementation Status Update - Partial Completion" "$DECISION_FILE" | tail -10)
+          
+          cat >> "$DECISION_FILE" << EOF
+
+          ### Implementation Decision - Continue with Remaining Items
+          - **Date**: $(date -Iseconds)
+          - **Decision**: Continue implementing remaining items
+          - **Decided By**: @${{ github.event.comment.user.login }}
+          - **Context**: Partial implementation detected, continuing with remaining work
+          
+          #### Implementation Instructions for Claude:
+          - **Current State**: Working code exists for completed phases
+          - **Task**: Complete remaining items only, do not modify completed work
+          - **Branch**: Continue on existing branch \`$BRANCH_NAME\`
+          - **Validation**: Ensure all existing tests continue passing
+          
+          EOF
+          
+          git add "$DECISION_FILE"
+          git commit -m "Pipeline: Decision to continue remaining implementation for issue #${{ needs.parse-comment.outputs.issue_number }}"
+          git push origin "$BRANCH_NAME"
+
+      - name: Trigger Continued Implementation
+        run: |
+          BRANCH_NAME="${{ needs.validate-branch-continuity.outputs.branch_name }}"
+          ISSUE_NUMBER="${{ needs.parse-comment.outputs.issue_number }}"
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          
+          gh issue comment $ISSUE_NUMBER --body "
+          ✅ **Decision Recorded: Continue Implementation**
+          
+          Proceeding with remaining implementation items.
+          
+          ---
+          
+          @claude Please continue implementation with the remaining items.
+          
+          **Read complete pipeline context:**
+          \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md\`
+          
+          **Critical Context from Decision Record:**
+          - Current branch: \`$BRANCH_NAME\`
+          - Some phases are ✅ COMPLETE - DO NOT MODIFY
+          - Remaining phases need ❌ COMPLETION 
+          
+          **Your Task:**
+          1. Read the decision record to understand what's complete vs. incomplete
+          2. Use existing branch: \`git checkout $BRANCH_NAME && git pull origin $BRANCH_NAME\`
+          3. Implement ONLY the remaining items identified in the decision record
+          4. Do NOT modify or refactor completed items
+          5. Ensure all existing tests continue passing
+          6. Update decision record with progress
+          
+          **Important**: The decision record contains the authoritative status of what's been completed. Use it to guide your work.
+          "
+
+  # Task 5: Decision Record Size Management
+  manage-decision-record:
+    if: github.event_name == 'issue_comment' && needs.validate-context-continuity.outputs.context_valid == 'true'
+    needs: [load-config, validate-context-continuity]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Decision Record Size
+        id: size-check
+        run: |
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
+          
+          if [ -f "$DECISION_FILE" ]; then
+            LINE_COUNT=$(wc -l < "$DECISION_FILE")
+            WORD_COUNT=$(wc -w < "$DECISION_FILE")
+            
+            echo "lines=$LINE_COUNT" >> $GITHUB_OUTPUT
+            echo "words=$WORD_COUNT" >> $GITHUB_OUTPUT
+            
+            # Set thresholds for management
+            if [ "$LINE_COUNT" -gt 200 ]; then
+              echo "needs_management=true" >> $GITHUB_OUTPUT
+              echo "management_type=summarize" >> $GITHUB_OUTPUT
+            elif [ "$LINE_COUNT" -gt 150 ]; then
+              echo "needs_management=true" >> $GITHUB_OUTPUT
+              echo "management_type=compress" >> $GITHUB_OUTPUT
+            else
+              echo "needs_management=false" >> $GITHUB_OUTPUT
+            fi
+            
+            echo "📊 Decision record: $LINE_COUNT lines, $WORD_COUNT words"
+          fi
+
+      - name: Compress Decision Record
+        if: steps.size-check.outputs.needs_management == 'true' && steps.size-check.outputs.management_type == 'compress'
+        run: |
+          THOUGHTS_DIR="${{ needs.load-config.outputs.thoughts_dir }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
+          
+          echo "🗜️ Compressing decision record to improve readability..."
+          
+          # Create backup
+          cp "$DECISION_FILE" "$DECISION_FILE.backup"
+          
+          # Compress completed phases into collapsible sections
+          python3 << 'EOF'
+          import re
+          import os
+          
+          decision_file = os.environ['DECISION_FILE']
+          
+          with open(decision_file, 'r') as f:
+              content = f.read()
+          
+          # Compress completed phases into collapsible sections
+          def compress_section(match):
+              section_name = match.group(1)
+              section_content = match.group(2)
+              
+              if "(Complete ✅)" in section_name:
+                  # Extract key info for summary
+                  summary_lines = []
+                  for line in section_content.split('\n'):
+                      if line.strip().startswith('- **') and any(key in line for key in ['Status', 'Validated', 'Document']):
+                          summary_lines.append(line.strip())
+                  
+                  summary = '\n'.join(summary_lines[:3])  # Keep top 3 key facts
+                  
+                  return f"""{section_name}
+          <details>
+          <summary>📋 Phase Summary (click to expand)</summary>
+          
+          {summary}
+          
+          <details>
+          <summary>📝 Full Details</summary>
+          
+          {section_content}
+          </details>
+          </details>
+          """
+              return match.group(0)
+          
+          # Apply compression to completed phases
+          compressed = re.sub(r'(## \w+ Phase.*?Complete ✅\).*?)\n(.*?)(?=\n## |$)', compress_section, content, flags=re.DOTALL)
+          
+          with open(decision_file, 'w') as f:
+              f.write(compressed)
+          
+          print("✅ Decision record compressed successfully")
+          EOF
+
+  # Task 3: Enhanced Error Recovery - Global failure handler
+  handle-validation-failure:
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Analyze Failure Context
+        id: analyze
+        run: |
+          echo "failure_type=validation" >> $GITHUB_OUTPUT
+          echo "retry_possible=true" >> $GITHUB_OUTPUT
+
+      - name: Provide Recovery Guidance
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --body "
+          ❌ **Pipeline Failure Detected**
+          
+          **Failure Type**: ${{ steps.analyze.outputs.failure_type }}
+          **Recovery Possible**: ${{ steps.analyze.outputs.retry_possible }}
+          
+          **Common Recovery Actions:**
+          
+          ### If Research Failed:
+          - Review research document structure and content
+          - Ensure sufficient file references (minimum 3)
+          - Check YAML frontmatter is complete
+          - Retry: Comment \`@claude retry research\`
+          
+          ### If Planning Failed:
+          - Review implementation plan for completeness
+          - Ensure success criteria are properly formatted
+          - Check for unresolved TODO/FIXME items
+          - Retry: Comment \`@claude retry planning\`
+          
+          ### If Implementation Failed:
+          - Check that all tests pass locally
+          - Verify code quality standards
+          - Ensure no merge conflicts
+          - Retry: Comment \`@claude retry implementation\`
+          
+          ### If Branch Issues:
+          - Pipeline may need to be restarted entirely
+          - Comment \`@claude restart pipeline\` to begin fresh
+          
+          **Pipeline Status**: ⏸️ Paused pending resolution
+          
+          **Debug Information:**
+          - Issue: #${{ github.event.issue.number }}
+          - Workflow: ${{ github.workflow }}
+          - Run: ${{ github.run_id }}
+          - Time: $(date -Iseconds)
+          "
+
+  # Enhanced PR validation
+  validate-pr:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: .github/shared-workflows
+          
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y gh
+          
+      - name: Validate PR with enhanced context
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_BRANCH="${{ github.event.pull_request.head.ref }}"
+          
+          # Check if this is a pipeline branch
+          if echo "$PR_BRANCH" | grep -q "^feature/issue-[0-9]\+-"; then
+            ISSUE_NUMBER=$(echo "$PR_BRANCH" | sed -n 's/^feature\/issue-\([0-9]\+\)-.*/\1/p')
+            
+            # Enhanced PR validation for pipeline PRs
+            if ./.github/shared-workflows/scripts/validate-pr.sh "$PR_NUMBER"; then
+              gh pr comment $PR_NUMBER --body "
+              ✅ **Pipeline PR Validation Passed**
+              
+              **Source Issue**: #$ISSUE_NUMBER
+              **Pipeline Branch**: \`$PR_BRANCH\`
+              **Validation**: All pipeline requirements met
+              **Status**: Ready for review
+              
+              This PR was created through the development pipeline and has passed all validation checks.
+              "
+            else
+              gh pr comment $PR_NUMBER --body "❌ **Pipeline PR Validation Failed** - Please review requirements"
+              exit 1
+            fi
+          else
+            # Standard PR validation
+            if ./.github/shared-workflows/scripts/validate-pr.sh "$PR_NUMBER"; then
+              gh pr comment $PR_NUMBER --body "✅ **PR Validation Passed** - Ready for review"
+            else
+              gh pr comment $PR_NUMBER --body "❌ **PR Validation Failed** - Please review requirements"
+              exit 1
+            fi
+          fi

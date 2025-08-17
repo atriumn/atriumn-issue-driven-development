@@ -16,14 +16,18 @@ atriumn-shared-workflows/
 │   ├── validate-research.sh           # Research phase validation
 │   ├── validate-plan.sh              # Planning phase validation
 │   ├── validate-implementation.sh    # Implementation validation
-│   └── validate-pr.sh                # Pull request validation
+│   ├── validate-pr.sh                # Pull request validation
+│   └── manage-decision-record.py     # Decision record management (Phase 3)
 ├── configs/                          # Configuration templates
 │   ├── default.yml                   # Default configuration
 │   ├── curatefor.me.yml              # CurateFor.me specific config
 │   └── schema.yml                    # Configuration schema
 ├── templates/                        # Reusable templates
 │   ├── decision-record-template.md   # Decision record template
-│   └── repo-workflow-template.yml    # Repository workflow template
+│   ├── repo-workflow-template.yml    # Repository workflow template (Phase 1-2)
+│   └── enhanced-repo-workflow-template.yml # Enhanced workflow (Phase 3)
+├── docs/                            # Documentation
+│   └── phase3-branch-safety-context-preservation.md # Phase 3 features
 ├── test/                             # Test suite
 │   ├── test-validation-scripts.sh    # Validation script tests
 │   └── test-data/                    # Test fixtures (auto-generated)
@@ -407,6 +411,88 @@ gh issue view 123 --json labels
 # Test PR validation
 ./scripts/validate-pr.sh 456
 ```
+
+## Phase 3: Branch Safety & Context Preservation
+
+Phase 3 introduces enterprise-grade reliability features for the development pipeline:
+
+### Enhanced Branch Management
+- **Branch Safety Checks**: Validates pipeline branches exist and are properly tracked
+- **State Validation**: Ensures branch state consistency with pipeline expectations
+- **Automatic Recovery**: Handles branch deletions and corruption
+
+### Context Preservation
+- **Decision Records**: Comprehensive tracking of pipeline state and decisions
+- **Phase Context Validation**: Ensures each phase has proper prerequisites
+- **Document Integrity**: Validates required documents exist and are well-formed
+
+### Error Recovery
+- **Automatic Failure Detection**: Analyzes failures and provides recovery guidance
+- **Retry Mechanisms**: Phase-specific retry commands for common failure scenarios
+- **Complete Pipeline Restart**: Clean restart capability with context preservation
+
+### Partial Completion Handling
+- **Completion Analysis**: Detects 75%-25% scenarios and other partial implementations
+- **Human Decision Points**: Clear options for proceeding with partial work
+- **Intelligent Continuation**: Preserves completed work while finishing remaining items
+
+### Enhanced Commands
+
+```bash
+# Enhanced pipeline with all Phase 3 features
+@claude run development pipeline
+
+# Error recovery commands
+@claude retry research        # Retry research phase after failure
+@claude retry planning        # Retry planning phase
+@claude retry implementation  # Retry implementation phase
+@claude restart pipeline     # Complete pipeline restart
+
+# Partial completion decisions
+continue implementing remaining items  # Continue with remaining work
+accept current implementation         # Create PR with current state
+modify implementation: [changes]      # Modify scope and continue
+```
+
+### Decision Record Management
+
+```bash
+# Analyze decision record size and health
+python scripts/manage-decision-record.py thoughts/shared/decisions/pipeline-issue-123.md --action analyze
+
+# Automatic size management
+python scripts/manage-decision-record.py thoughts/shared/decisions/pipeline-issue-123.md --auto
+
+# Manual compression for readability
+python scripts/manage-decision-record.py thoughts/shared/decisions/pipeline-issue-123.md --action compress
+
+# Create summary version with archived details
+python scripts/manage-decision-record.py thoughts/shared/decisions/pipeline-issue-123.md --action summarize
+```
+
+### Using Enhanced Workflows
+
+1. **Copy the enhanced template:**
+   ```bash
+   cp templates/enhanced-repo-workflow-template.yml .github/workflows/development-pipeline-enhanced.yml
+   ```
+
+2. **Start enhanced pipeline:**
+   ```bash
+   # Comment on GitHub issue
+   @claude run development pipeline
+   ```
+
+3. **Enhanced features automatically provide:**
+   - Branch safety validation on every operation
+   - Context preservation across all phases
+   - Error recovery mechanisms with clear guidance
+   - Partial completion detection and human decision points
+   - Decision record size management and archiving
+
+### Phase 3 Documentation
+
+For complete Phase 3 feature documentation, see: [`docs/phase3-branch-safety-context-preservation.md`](docs/phase3-branch-safety-context-preservation.md)
 
 ## Dependencies
 
