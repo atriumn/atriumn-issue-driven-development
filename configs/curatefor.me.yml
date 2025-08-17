@@ -1,0 +1,25 @@
+# CurateFor.me specific configuration
+name: "curatefor.me"
+version: "1.0.0"
+
+# Validation settings
+validation:
+  enabled: true
+  strict_mode: true
+  
+# Pipeline settings
+pipeline:
+  timeout: 45
+  retry_count: 2
+  
+# Notification settings
+notifications:
+  enabled: true
+  channels:
+    - "slack"
+    - "email"
+    
+# Environment specific settings
+environment:
+  type: "production"
+  monitoring: true

@@ -1,0 +1,18 @@
+# Default configuration
+name: "default"
+version: "1.0.0"
+
+# Validation settings
+validation:
+  enabled: true
+  strict_mode: false
+  
+# Pipeline settings
+pipeline:
+  timeout: 30
+  retry_count: 3
+  
+# Notification settings
+notifications:
+  enabled: true
+  channels: []

@@ -1,0 +1,55 @@
+# Configuration schema definition
+$schema: "http://json-schema.org/draft-07/schema#"
+title: "Atriumn Workflow Configuration"
+type: "object"
+
+required:
+  - "name"
+  - "version"
+  - "validation"
+  - "pipeline"
+
+properties:
+  name:
+    type: "string"
+    description: "Configuration name"
+    
+  version:
+    type: "string"
+    pattern: "^\\d+\\.\\d+\\.\\d+$"
+    description: "Semantic version"
+    
+  validation:
+    type: "object"
+    required: ["enabled"]
+    properties:
+      enabled:
+        type: "boolean"
+      strict_mode:
+        type: "boolean"
+        default: false
+        
+  pipeline:
+    type: "object"
+    required: ["timeout", "retry_count"]
+    properties:
+      timeout:
+        type: "integer"
+        minimum: 1
+        maximum: 300
+      retry_count:
+        type: "integer"
+        minimum: 0
+        maximum: 10
+        
+  notifications:
+    type: "object"
+    properties:
+      enabled:
+        type: "boolean"
+        default: true
+      channels:
+        type: "array"
+        items:
+          type: "string"
+          enum: ["slack", "email", "teams"]
