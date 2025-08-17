@@ -1,11 +1,21 @@
-# Default configuration
-name: "default"
+# Default configuration that all repos inherit
+repo_name: "default"
+base_branch: "main"
+thoughts_directory: "thoughts/"
 version: "1.0.0"
 
 # Validation settings
 validation:
   enabled: true
   strict_mode: false
+  research_min_refs: 3
+  plan_required_sections: 
+    - "## Implementation Approach"
+    - "## Phase"
+    - "#### Automated Verification:"
+    - "#### Manual Verification:"
+  implementation_test_commands:
+    - "make test"
   
 # Pipeline settings
 pipeline:
@@ -16,3 +26,19 @@ pipeline:
 notifications:
   enabled: true
   channels: []
+  escalation_hours: 2
+
+# Branch settings
+branches:
+  prefix: "feature/"
+  naming: "issue-{number}-{title-slug}"
+
+# File patterns
+file_patterns:
+  research: "{thoughts_directory}/shared/research/"
+  plans: "{thoughts_directory}/shared/plans/"
+  decisions: "{thoughts_directory}/shared/decisions/"
+
+# Team settings
+team:
+  default_reviewers: []

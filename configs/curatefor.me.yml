@@ -1,11 +1,23 @@
-# CurateFor.me specific configuration
-name: "curatefor.me"
+# curatefor.me specific overrides
+repo_name: "curatefor.me"
+base_branch: "develop"
+thoughts_directory: "thoughts/"
 version: "1.0.0"
 
 # Validation settings
 validation:
   enabled: true
   strict_mode: true
+  research_min_refs: 3
+  plan_required_sections: 
+    - "## Implementation Approach"
+    - "## Phase"
+    - "#### Automated Verification:"
+    - "#### Manual Verification:"
+  implementation_test_commands:
+    - "make test"
+    - "make lint"
+    - "make typecheck"
   
 # Pipeline settings
 pipeline:
@@ -18,6 +30,20 @@ notifications:
   channels:
     - "slack"
     - "email"
+  slack_channel: "#dev-team"
+  escalation_hours: 2
+
+# Branch settings
+branches:
+  prefix: "feature/"
+  naming: "issue-{number}-{title-slug}"
+
+# Team settings
+team:
+  default_reviewers: ["@jeff-atriumn"]
+  domain_experts:
+    frontend: "@frontend-expert" 
+    backend: "@backend-expert"
     
 # Environment specific settings
 environment:

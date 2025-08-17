@@ -4,15 +4,24 @@ title: "Atriumn Workflow Configuration"
 type: "object"
 
 required:
-  - "name"
-  - "version"
+  - "repo_name"
+  - "base_branch"
+  - "thoughts_directory"
   - "validation"
   - "pipeline"
 
 properties:
-  name:
+  repo_name:
     type: "string"
-    description: "Configuration name"
+    description: "Repository name"
+    
+  base_branch:
+    type: "string"
+    description: "Base branch name (main, develop, etc.)"
+    
+  thoughts_directory:
+    type: "string"
+    description: "Directory for storing thoughts/documentation"
     
   version:
     type: "string"
@@ -21,13 +30,28 @@ properties:
     
   validation:
     type: "object"
-    required: ["enabled"]
+    required: ["enabled", "research_min_refs"]
     properties:
       enabled:
         type: "boolean"
       strict_mode:
         type: "boolean"
         default: false
+      research_min_refs:
+        type: "integer"
+        minimum: 1
+        maximum: 20
+        description: "Minimum file references required in research"
+      plan_required_sections:
+        type: "array"
+        items:
+          type: "string"
+        description: "Required sections in implementation plans"
+      implementation_test_commands:
+        type: "array"
+        items:
+          type: "string"
+        description: "Test commands to run during implementation validation"
         
   pipeline:
     type: "object"
@@ -53,3 +77,42 @@ properties:
         items:
           type: "string"
           enum: ["slack", "email", "teams"]
+      slack_channel:
+        type: "string"
+        pattern: "^#.+"
+      escalation_hours:
+        type: "integer"
+        minimum: 1
+        maximum: 72
+        
+  branches:
+    type: "object"
+    properties:
+      prefix:
+        type: "string"
+        description: "Branch prefix (feature/, hotfix/, etc.)"
+      naming:
+        type: "string"
+        description: "Branch naming pattern"
+        
+  file_patterns:
+    type: "object"
+    properties:
+      research:
+        type: "string"
+      plans:
+        type: "string"
+      decisions:
+        type: "string"
+        
+  team:
+    type: "object"
+    properties:
+      default_reviewers:
+        type: "array"
+        items:
+          type: "string"
+      domain_experts:
+        type: "object"
+        additionalProperties:
+          type: "string"

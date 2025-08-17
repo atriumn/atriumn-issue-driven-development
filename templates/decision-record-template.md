@@ -1,37 +1,92 @@
-# Decision Record: [Title]
+# Pipeline Decision Record - Issue #{issue_number}: {issue_title}
 
-**Date:** [YYYY-MM-DD]  
-**Status:** [Proposed | Accepted | Rejected | Superseded]  
-**Deciders:** [List of people involved in the decision]  
+## Issue Context
+- **Issue**: #{issue_number}
+- **Title**: {issue_title}
+- **Branch**: {branch_name}
+- **Started**: {start_date}
+- **Repository**: {repo_name}
 
-## Context
+## Current Status
+- **Phase**: {current_phase}
+- **Completion**: {completion_percentage}%
+- **Next Action**: {next_action}
 
-[Describe the forces at play, including technological, political, social, and project local. These forces are probably in tension, and should be called out. The language in this section is value-neutral. It is simply describing facts.]
+---
 
-## Decision
+## Research Phase
+- **Status**: {research_status}
+- **Started**: {research_start_date}
+- **Completed**: {research_completion_date}
 
-[State the decision that was made. Use full sentences, active voice.]
+### Key Findings
+- {research_finding_1}
+- {research_finding_2}
+- {research_finding_3}
 
-## Consequences
+### Architecture Decisions
+- **Decision**: {architecture_decision}
+- **Rationale**: {decision_rationale}
+- **Impact**: {decision_impact}
 
-### Positive
-- [Positive outcome 1]
-- [Positive outcome 2]
+---
 
-### Negative  
-- [Negative outcome 1]
-- [Negative outcome 2]
+## Planning Phase
+- **Status**: {planning_status}
+- **Started**: {planning_start_date}
+- **Completed**: {planning_completion_date}
 
-### Neutral
-- [Neutral outcome 1]
-- [Neutral outcome 2]
+### Implementation Approach
+- **Strategy**: {implementation_strategy}
+- **Timeline**: {estimated_timeline}
+- **Phases**: {number_of_phases}
 
-## Implementation Notes
+### Scope Decisions
+- **Include**: {scope_include}
+- **Exclude**: {scope_exclude}
+- **Future Work**: {future_work}
 
-[Any specific implementation details, timelines, or follow-up actions required]
+---
 
-## References
+## Implementation Phase
+- **Status**: {implementation_status}
+- **Started**: {implementation_start_date}
+- **Completion**: {implementation_completion}%
 
-- [Link to relevant documentation]
-- [Link to related discussions]
-- [Link to related decisions]
+### Phase Progress
+- **Phase 1**: {phase_1_status} - {phase_1_description}
+- **Phase 2**: {phase_2_status} - {phase_2_description}
+- **Phase 3**: {phase_3_status} - {phase_3_description}
+
+### Files Modified
+- {modified_file_1}
+- {modified_file_2}
+- {modified_file_3}
+
+### Implementation Decisions
+- **Decision**: {implementation_decision}
+- **Context**: {implementation_context}
+- **Impact**: {implementation_impact}
+
+---
+
+## PR Phase
+- **Status**: {pr_status}
+- **PR Number**: #{pr_number}
+- **Created**: {pr_creation_date}
+
+### PR Details
+- **Reviewers**: {pr_reviewers}
+- **Status Checks**: {status_checks_status}
+- **Merge Status**: {merge_status}
+
+---
+
+## Lessons Learned
+- {lesson_1}
+- {lesson_2}
+- {lesson_3}
+
+## Future Reference
+- {future_reference_1}
+- {future_reference_2}

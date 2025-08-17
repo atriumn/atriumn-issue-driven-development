@@ -23,23 +23,44 @@ atriumn-shared-workflows/
 │   └── schema.yml                    # Configuration schema
 ├── templates/                        # Reusable templates
 │   └── decision-record-template.md   # Decision record template
+├── test/                             # Test suite
+│   ├── test-validation-scripts.sh    # Validation script tests
+│   └── test-data/                    # Test fixtures (auto-generated)
 └── .github/workflows/                # GitHub Actions workflows
     └── development-pipeline.yml      # Main development pipeline
 ```
 
-## Validation Scripts
+## Phase 1: Validation Scripts (Current)
 
 ### Research Phase (`validate-research.sh`)
-Validates that proper research has been conducted before moving to planning phase.
+Validates research documents with the following checks:
+- YAML frontmatter with required fields (date, researcher, topic, status)
+- Required sections (Research Question, Summary, Detailed Findings, Code References, Architecture Insights)
+- Minimum number of file references (configurable, default: 3)
+- No placeholder text (TODO, FIXME, etc.)
 
 ### Planning Phase (`validate-plan.sh`)
-Ensures comprehensive planning and architecture decisions are documented.
+Validates implementation plans ensuring:
+- YAML frontmatter completeness
+- Required sections (Implementation Approach, Phase structure)
+- Proper success criteria with Automated and Manual verification sections
+- No unresolved questions or TODOs
+- Clear phase breakdown (Phase 1, Phase 2, etc.)
 
 ### Implementation Phase (`validate-implementation.sh`)
-Validates code quality, testing, and implementation standards.
+Validates implementation readiness:
+- Branch exists and has commits ahead of base branch
+- All configured test commands pass (make test, npm run lint, etc.)
+- No merge conflicts with base branch
+- Decision record updated with implementation details
 
 ### Pull Request Phase (`validate-pr.sh`)
-Final validation before code review and merge.
+Final PR validation:
+- PR exists and has proper description structure
+- Links to research and plan documents
+- Reviewers assigned
+- All status checks passing
+- Proper branch naming convention
 
 ## Configuration Files
 
@@ -53,24 +74,76 @@ Final validation before code review and merge.
 
 ## Usage
 
+### Prerequisites
+
+Install required dependencies:
+```bash
+# Install yq for YAML processing
+brew install yq  # macOS
+# or
+sudo apt-get install yq  # Ubuntu
+
+# Install GitHub CLI for PR validation
+brew install gh  # macOS
+# or
+sudo apt-get install gh  # Ubuntu
+```
+
 ### Using Validation Scripts
 
 ```bash
 # Make scripts executable
 chmod +x scripts/*.sh
 
-# Run validation for specific phase
-./scripts/validate-research.sh
-./scripts/validate-plan.sh
-./scripts/validate-implementation.sh
-./scripts/validate-pr.sh
+# Validate research document
+./scripts/validate-research.sh thoughts/shared/research/my-research.md
+
+# Validate implementation plan  
+./scripts/validate-plan.sh thoughts/shared/plans/my-plan.md
+
+# Validate implementation on branch
+./scripts/validate-implementation.sh feature/issue-123-my-feature
+
+# Validate PR
+./scripts/validate-pr.sh 123
+
+# Use custom config file
+./scripts/validate-research.sh .github/dev-config.yml thoughts/shared/research/my-research.md
+
+# Get help for any script
+./scripts/validate-research.sh --help
 ```
 
-### Using Configuration Templates
+### Configuration Setup
 
-1. Copy the appropriate config file from `configs/`
-2. Customize for your project needs
-3. Validate against the schema using `configs/schema.yml`
+Create `.github/development-pipeline-config.yml` in your repository:
+
+```yaml
+repo_name: "my-repo"
+base_branch: "main"
+thoughts_directory: "docs/"
+
+validation:
+  research_min_refs: 5
+  plan_required_sections:
+    - "## Implementation Approach"
+    - "## Phase"
+    - "#### Automated Verification:"
+    - "#### Manual Verification:"
+  implementation_test_commands:
+    - "npm test"
+    - "npm run lint"
+    - "npm run typecheck"
+
+team:
+  default_reviewers: ["@team-lead"]
+  
+notifications:
+  slack_channel: "#dev-team"
+  escalation_hours: 2
+```
+
+If no config file is found, scripts will use `configs/default.yml`.
 
 ### Using Templates
 
@@ -78,14 +151,47 @@ chmod +x scripts/*.sh
 2. Fill in project-specific information
 3. Follow the structured format provided
 
+### Testing
+
+```bash
+# Run all validation script tests
+./test/test-validation-scripts.sh
+
+# Run specific tests
+./test/test-validation-scripts.sh research
+./test/test-validation-scripts.sh plan
+./test/test-validation-scripts.sh help
+./test/test-validation-scripts.sh deps
+```
+
 ## Integration
 
 This repository is designed to be integrated into Atriumn project workflows through:
 
-- Git submodules
-- GitHub Actions workflows
-- Direct script execution in CI/CD pipelines
-- Configuration inheritance in project setup
+- **Git submodules**: Add as submodule to access scripts directly
+- **GitHub Actions workflows**: Reference scripts in CI/CD pipelines  
+- **Direct script execution**: Run validation scripts locally or in CI
+- **Configuration inheritance**: Use config templates for consistent setup
+
+### Example GitHub Actions Integration
+
+```yaml
+name: Validate Development Pipeline
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Checkout shared workflows
+      uses: actions/checkout@v4
+      with:
+        repository: atriumn/atriumn-shared-workflows
+        path: .github/shared-workflows
+    - name: Validate research
+      run: .github/shared-workflows/scripts/validate-research.sh docs/research/latest.md
+```
 
 ## Contributing
 
@@ -95,6 +201,21 @@ When contributing to this repository:
 2. Update documentation for any new scripts or templates
 3. Ensure all scripts are executable and properly tested
 4. Validate configuration changes against the schema
+
+## Coming in Phase 2
+
+- Complete GitHub Actions workflow automation
+- Multi-repo support and synchronization
+- Decision record automation and templates
+- Integration with project management tools
+- Advanced reporting and analytics
+
+## Dependencies
+
+- **yq**: YAML processing (required for all scripts)
+- **gh**: GitHub CLI (required for PR validation)
+- **git**: Version control (required for implementation validation)
+- **bash**: Shell scripting environment
 
 ## License
 
