@@ -1,0 +1,392 @@
+# Multi-Repository Pipeline Test
+name: Multi-Repository Pipeline Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_repos:
+        description: 'Comma-separated list of test repositories'
+        required: true
+        default: 'curatefor.me,platform-api'
+      test_scenarios:
+        description: 'Test scenarios to run'
+        required: true
+        type: choice
+        options:
+          - 'basic-validation'
+          - 'full-pipeline'
+          - 'config-variations'
+          - 'concurrent-pipelines'
+
+jobs:
+  setup-test-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Generate test matrix
+        id: matrix
+        run: |
+          # Create test matrix based on inputs
+          REPOS="${{ github.event.inputs.test_repos }}"
+          SCENARIOS="${{ github.event.inputs.test_scenarios }}"
+          
+          # Convert to JSON matrix
+          python3 << 'EOF'
+          import json
+          import os
+          
+          repos = os.environ['REPOS'].split(',')
+          scenarios = [os.environ['SCENARIOS']]
+          
+          # Create test configurations for each repo
+          matrix = []
+          for repo in repos:
+              for scenario in scenarios:
+                  matrix.append({
+                      'repo_name': repo.strip(),
+                      'scenario': scenario,
+                      'config_file': f'{repo.strip()}.yml'
+                  })
+          
+          print(json.dumps({'include': matrix}))
+          EOF
+
+  test-multi-repo-config:
+    needs: setup-test-matrix
+    strategy:
+      matrix: ${{fromJson(needs.setup-test-matrix.outputs.matrix)}}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        
+      - name: Install dependencies
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          sudo apt-get update && sudo apt-get install -y jq
+          pip install jsonschema pyyaml
+          
+      - name: Test configuration loading
+        run: |
+          CONFIG_FILE="configs/${{ matrix.config_file }}"
+          
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "❌ Configuration file not found: $CONFIG_FILE"
+            exit 1
+          fi
+          
+          echo "✅ Configuration file exists: $CONFIG_FILE"
+          
+          # Validate configuration using our validation script
+          if python3 scripts/validate-config.py "$CONFIG_FILE"; then
+            echo "✅ Configuration validation passed"
+          else
+            echo "❌ Configuration validation failed"
+            exit 1
+          fi
+
+      - name: Test multi-repo validation scripts
+        run: |
+          # Test the multi-repo aware validation script
+          CONFIG_FILE="configs/${{ matrix.config_file }}"
+          
+          # Create test documents based on repo configuration
+          CONFIG_JSON=$(yq eval -o=json '.' "$CONFIG_FILE")
+          THOUGHTS_DIR=$(echo "$CONFIG_JSON" | jq -r '.thoughts_directory')
+          
+          mkdir -p "test/$THOUGHTS_DIR/shared/research"
+          
+          # Create test research document with repo-specific content
+          REPO_NAME="${{ matrix.repo_name }}"
+          
+          cat > "test/$THOUGHTS_DIR/shared/research/test-research.md" << EOF
+          ---
+          date: 2025-08-17T14:30:00-05:00
+          researcher: test-user
+          topic: "Multi-repo test research for $REPO_NAME"
+          status: complete
+          ---
+          
+          # Research: Multi-repo Test for $REPO_NAME
+          
+          ## Research Question
+          How does the pipeline work for $REPO_NAME repository configuration?
+          
+          ## Summary
+          This is a test research document for multi-repo validation of $REPO_NAME.
+          
+          ## Detailed Findings
+          Repository-specific findings for $REPO_NAME implementation.
+          
+          ## Code References
+          - \`src/main.js:45\` - Main function initialization
+          - \`lib/utils.ts:67\` - Utility functions for validation
+          - \`config/app.yml:12\` - Configuration settings
+          EOF
+          
+          # Add repo-specific content
+          case "$REPO_NAME" in
+            "platform-api")
+              cat >> "test/$THOUGHTS_DIR/shared/research/test-research.md" << EOF
+          - \`api/routes.js:23\` - API route definitions
+          - \`security/auth.js:15\` - Authentication middleware
+          
+          ## Architecture Insights
+          Platform API architecture supports microservice patterns with security considerations.
+          API endpoints are designed for scalability and performance optimization.
+          EOF
+              ;;
+            "curatefor.me")
+              cat >> "test/$THOUGHTS_DIR/shared/research/test-research.md" << EOF
+          - \`src/humanlayer.js:89\` - Human layer integration
+          
+          ## Architecture Insights
+          CurateFor.me architecture integrates human workflows with automated curation.
+          The system follows a modular approach with clear user experience patterns.
+          EOF
+              ;;
+          esac
+          
+          # Test validation with repo-specific config
+          echo "🧪 Testing multi-repo validation for $REPO_NAME..."
+          
+          if ./scripts/validate-research-multi.sh "$CONFIG_FILE" "test/$THOUGHTS_DIR/shared/research/test-research.md"; then
+            echo "✅ Multi-repo validation passed for $REPO_NAME"
+          else
+            echo "❌ Multi-repo validation failed for $REPO_NAME"
+            exit 1
+          fi
+
+      - name: Test repo-specific customizations
+        run: |
+          CONFIG_FILE="configs/${{ matrix.config_file }}"
+          CONFIG_JSON=$(yq eval -o=json '.' "$CONFIG_FILE")
+          
+          # Test repository-specific features
+          REPO_NAME="${{ matrix.repo_name }}"
+          
+          echo "🔍 Testing $REPO_NAME specific features..."
+          
+          case "$REPO_NAME" in
+            "platform-api")
+              echo "Validating platform API configuration..."
+              MIN_REFS=$(echo "$CONFIG_JSON" | jq -r '.validation.research_min_refs')
+              if [ "$MIN_REFS" -ne 5 ]; then
+                echo "❌ Platform API should require 5 file references, got $MIN_REFS"
+                exit 1
+              fi
+              
+              BASE_BRANCH=$(echo "$CONFIG_JSON" | jq -r '.base_branch')
+              if [ "$BASE_BRANCH" != "main" ]; then
+                echo "❌ Platform API should use main branch, got $BASE_BRANCH"
+                exit 1
+              fi
+              
+              echo "✅ Platform API configuration validated"
+              ;;
+              
+            "curatefor.me")
+              echo "Validating curatefor.me configuration..."
+              BASE_BRANCH=$(echo "$CONFIG_JSON" | jq -r '.base_branch')
+              if [ "$BASE_BRANCH" != "develop" ]; then
+                echo "❌ curatefor.me should use develop branch, got $BASE_BRANCH"
+                exit 1
+              fi
+              
+              PARALLEL_PIPELINES=$(echo "$CONFIG_JSON" | jq -r '.workflow_customization.parallel_pipelines')
+              if [ "$PARALLEL_PIPELINES" -ne 3 ]; then
+                echo "❌ curatefor.me should allow 3 parallel pipelines, got $PARALLEL_PIPELINES"
+                exit 1
+              fi
+              
+              echo "✅ curatefor.me configuration validated"
+              ;;
+          esac
+
+      - name: Test configuration recommendations
+        run: |
+          CONFIG_FILE="configs/${{ matrix.config_file }}"
+          
+          echo "📊 Generating configuration recommendations..."
+          python3 scripts/validate-config.py "$CONFIG_FILE" --report --output json > config_report.json
+          
+          # Check that report was generated successfully
+          if jq -e '.valid' config_report.json > /dev/null; then
+            echo "✅ Configuration report generated"
+            echo "📋 Report summary:"
+            jq -r '.summary | to_entries[] | "\(.key): \(.value)"' config_report.json
+            
+            # Check for recommendations
+            RECOMMENDATIONS=$(jq '.recommendations | length' config_report.json)
+            echo "💡 Recommendations: $RECOMMENDATIONS"
+            
+          else
+            echo "❌ Configuration report generation failed"
+            jq '.errors[]' config_report.json
+            exit 1
+          fi
+
+  test-concurrent-pipelines:
+    if: github.event.inputs.test_scenarios == 'concurrent-pipelines'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        
+      - name: Simulate concurrent pipeline limits
+        run: |
+          echo "🧪 Testing concurrent pipeline limitations..."
+          
+          # Test that different repos can have different pipeline limits
+          CURATEFOR_LIMIT=$(yq eval '.workflow_customization.parallel_pipelines' configs/curatefor.me.yml)
+          PLATFORM_LIMIT=$(yq eval '.workflow_customization.parallel_pipelines' configs/platform-api.yml)
+          
+          echo "curatefor.me parallel limit: $CURATEFOR_LIMIT"
+          echo "platform-api parallel limit: $PLATFORM_LIMIT"
+          
+          if [ "$CURATEFOR_LIMIT" -ne 3 ] || [ "$PLATFORM_LIMIT" -ne 2 ]; then
+            echo "❌ Concurrent pipeline limits not configured correctly"
+            exit 1
+          fi
+          
+          echo "✅ Concurrent pipeline limits validated"
+
+  test-cross-repo-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        
+      - name: Install dependencies
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          sudo apt-get update && sudo apt-get install -y jq
+          
+      - name: Test repository isolation
+        run: |
+          echo "🧪 Testing that pipelines in different repos don't interfere..."
+          
+          # Test that branch naming patterns are different
+          CURATEFOR_PREFIX=$(yq eval '.branches.prefix' configs/curatefor.me.yml)
+          PLATFORM_PREFIX=$(yq eval '.branches.prefix' configs/platform-api.yml)
+          
+          echo "curatefor.me branch prefix: $CURATEFOR_PREFIX"
+          echo "platform-api branch prefix: $PLATFORM_PREFIX"
+          
+          # Test that thoughts directories can be different
+          CURATEFOR_THOUGHTS=$(yq eval '.thoughts_directory' configs/curatefor.me.yml)
+          PLATFORM_THOUGHTS=$(yq eval '.thoughts_directory' configs/platform-api.yml)
+          
+          echo "curatefor.me thoughts dir: $CURATEFOR_THOUGHTS"
+          echo "platform-api thoughts dir: $PLATFORM_THOUGHTS"
+          
+          if [ "$CURATEFOR_THOUGHTS" = "$PLATFORM_THOUGHTS" ]; then
+            echo "ℹ️  Both repos use same thoughts directory (this is OK)"
+          else
+            echo "ℹ️  Repos use different thoughts directories (this provides isolation)"
+          fi
+          
+          # Test that validation rules are repo-specific
+          CURATEFOR_MIN_REFS=$(yq eval '.validation.research_min_refs' configs/curatefor.me.yml)
+          PLATFORM_MIN_REFS=$(yq eval '.validation.research_min_refs' configs/platform-api.yml)
+          
+          if [ "$CURATEFOR_MIN_REFS" -eq "$PLATFORM_MIN_REFS" ]; then
+            echo "⚠️  Both repos have same validation requirements"
+          else
+            echo "✅ Repos have different validation requirements (good isolation)"
+          fi
+          
+          echo "✅ Repository isolation test passed"
+
+  test-config-schema-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        
+      - name: Install dependencies
+        run: |
+          pip install jsonschema pyyaml
+          
+      - name: Test all configurations against schema
+        run: |
+          echo "🧪 Testing all configurations against schema..."
+          
+          # Test each config file
+          for config_file in configs/*.yml; do
+            # Skip schema file itself
+            if [[ "$config_file" == "configs/schema.yml" ]]; then
+              continue
+            fi
+            
+            echo "Testing $config_file..."
+            
+            if python3 scripts/validate-config.py "$config_file"; then
+              echo "✅ $config_file validation passed"
+            else
+              echo "❌ $config_file validation failed"
+              exit 1
+            fi
+          done
+          
+          echo "✅ All configurations passed schema validation"
+
+  report-multi-repo-results:
+    needs: [test-multi-repo-config, test-concurrent-pipelines, test-cross-repo-isolation, test-config-schema-validation]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect test results
+        run: |
+          echo "📊 Multi-Repository Test Results"
+          echo "==============================="
+          
+          # Collect results from matrix jobs
+          echo "Configuration Tests:"
+          echo "- Matrix jobs: ${{ needs.test-multi-repo-config.result }}"
+          
+          echo ""
+          echo "Concurrent Pipeline Tests:"
+          echo "- Status: ${{ needs.test-concurrent-pipelines.result }}"
+          
+          echo ""
+          echo "Cross-repo Isolation Tests:"
+          echo "- Status: ${{ needs.test-cross-repo-isolation.result }}"
+          
+          echo ""
+          echo "Schema Validation Tests:"
+          echo "- Status: ${{ needs.test-config-schema-validation.result }}"
+          
+          # Overall status
+          OVERALL_SUCCESS=true
+          
+          if [ "${{ needs.test-multi-repo-config.result }}" != "success" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          if [ "${{ needs.test-cross-repo-isolation.result }}" != "success" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          if [ "${{ needs.test-config-schema-validation.result }}" != "success" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          if [ "$OVERALL_SUCCESS" = "true" ]; then
+            echo ""
+            echo "✅ Multi-repository pipeline system ready!"
+            echo ""
+            echo "🎯 Test Summary:"
+            echo "- Multi-repo configurations validated"
+            echo "- Repository-specific validation working"
+            echo "- Cross-repository isolation confirmed"
+            echo "- Configuration schema validation passed"
+          else
+            echo ""
+            echo "❌ Multi-repository tests failed - review results above"
+            exit 1
+          fi

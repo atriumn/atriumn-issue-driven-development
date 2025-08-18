@@ -1,51 +1,45 @@
-# curatefor.me specific overrides
+# curatefor.me specific configuration
 repo_name: "curatefor.me"
 base_branch: "develop"
 thoughts_directory: "thoughts/"
-version: "1.0.0"
 
-# Validation settings
 validation:
-  enabled: true
-  strict_mode: true
   research_min_refs: 3
-  plan_required_sections: 
-    - "## Implementation Approach"
-    - "## Phase"
-    - "#### Automated Verification:"
-    - "#### Manual Verification:"
   implementation_test_commands:
     - "make test"
     - "make lint"
     - "make typecheck"
-  
-# Pipeline settings
-pipeline:
-  timeout: 45
-  retry_count: 2
-  
-# Notification settings
+  pr_required_sections:
+    - "Summary"
+    - "Related Documents" 
+    - "Testing"
+    - "Changes Made"
+    - "Verification"
+
 notifications:
-  enabled: true
-  channels:
-    - "slack"
-    - "email"
   slack_channel: "#dev-team"
   escalation_hours: 2
 
-# Branch settings
-branches:
-  prefix: "feature/"
-  naming: "issue-{number}-{title-slug}"
-
-# Team settings
 team:
   default_reviewers: ["@jeff-atriumn"]
   domain_experts:
-    frontend: "@frontend-expert" 
+    frontend: "@frontend-expert"
     backend: "@backend-expert"
-    
-# Environment specific settings
-environment:
-  type: "production"
-  monitoring: true
+    infrastructure: "@devops-lead"
+  tech_lead: "@tech-lead"
+
+branches:
+  prefix: "feature/"
+  naming: "issue-{number}-{title-slug}"
+  cleanup_merged: true
+
+workflow_customization:
+  auto_proceed_default: false
+  phase_timeouts:
+    research_hours: 4
+    planning_hours: 2
+    implementation_hours: 24
+  parallel_pipelines: 3
+
+integration_settings:
+  deployment_environments: ["staging", "production"]

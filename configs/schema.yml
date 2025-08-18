@@ -1,118 +1,268 @@
-# Configuration schema definition
-$schema: "http://json-schema.org/draft-07/schema#"
-title: "Atriumn Workflow Configuration"
-type: "object"
+# configs/schema.yml - Complete multi-repository configuration schema
+configuration_schema:
+  version: "1.0"
+  
+  required_fields:
+    - repo_name
+    - base_branch
+    - thoughts_directory
+    
+  optional_fields:
+    - validation
+    - notifications  
+    - team
+    - branches
+    - file_patterns
+    - workflow_customization
+    - integration_settings
 
-required:
-  - "repo_name"
-  - "base_branch"
-  - "thoughts_directory"
-  - "validation"
-  - "pipeline"
-
-properties:
+field_definitions:
   repo_name:
-    type: "string"
-    description: "Repository name"
+    type: string
+    description: "Repository identifier for configuration lookup"
+    example: "curatefor.me"
     
   base_branch:
-    type: "string"
-    description: "Base branch name (main, develop, etc.)"
+    type: string
+    description: "Default branch to create feature branches from"
+    default: "main"
+    allowed_values: ["main", "master", "develop", "dev"]
     
   thoughts_directory:
-    type: "string"
-    description: "Directory for storing thoughts/documentation"
-    
-  version:
-    type: "string"
-    pattern: "^\\d+\\.\\d+\\.\\d+$"
-    description: "Semantic version"
+    type: string
+    description: "Root directory for thoughts/documentation"
+    default: "thoughts/"
+    pattern: "^[a-zA-Z0-9_/-]+/$"
     
   validation:
-    type: "object"
-    required: ["enabled", "research_min_refs"]
+    type: object
     properties:
-      enabled:
-        type: "boolean"
-      strict_mode:
-        type: "boolean"
-        default: false
       research_min_refs:
-        type: "integer"
+        type: integer
+        default: 3
         minimum: 1
-        maximum: 20
-        description: "Minimum file references required in research"
+        description: "Minimum file references required in research documents"
       plan_required_sections:
-        type: "array"
-        items:
-          type: "string"
-        description: "Required sections in implementation plans"
+        type: array
+        default: ["## Implementation Approach", "## Phase", "#### Automated Verification:", "#### Manual Verification:"]
+        description: "Sections that must be present in implementation plans"
       implementation_test_commands:
-        type: "array"
-        items:
-          type: "string"
-        description: "Test commands to run during implementation validation"
-        
-  pipeline:
-    type: "object"
-    required: ["timeout", "retry_count"]
-    properties:
-      timeout:
-        type: "integer"
-        minimum: 1
-        maximum: 300
-      retry_count:
-        type: "integer"
-        minimum: 0
-        maximum: 10
+        type: array
+        default: ["make test"]
+        description: "Commands to run for implementation validation"
+      pr_required_sections:
+        type: array
+        default: ["Summary", "Related Documents", "Testing", "Changes Made"]
+        description: "Required sections in PR descriptions"
         
   notifications:
-    type: "object"
+    type: object
     properties:
-      enabled:
-        type: "boolean"
-        default: true
-      channels:
-        type: "array"
-        items:
-          type: "string"
-          enum: ["slack", "email", "teams"]
       slack_channel:
-        type: "string"
-        pattern: "^#.+"
+        type: string
+        pattern: "^#[a-zA-Z0-9_-]+$"
+        description: "Slack channel for pipeline notifications"
+      email_list:
+        type: array
+        items:
+          type: string
+          format: email
+        description: "Email addresses for notifications"
       escalation_hours:
-        type: "integer"
+        type: integer
+        default: 2
         minimum: 1
-        maximum: 72
-        
-  branches:
-    type: "object"
-    properties:
-      prefix:
-        type: "string"
-        description: "Branch prefix (feature/, hotfix/, etc.)"
-      naming:
-        type: "string"
-        description: "Branch naming pattern"
-        
-  file_patterns:
-    type: "object"
-    properties:
-      research:
-        type: "string"
-      plans:
-        type: "string"
-      decisions:
-        type: "string"
+        maximum: 24
+        description: "Hours before escalating stalled pipelines"
         
   team:
-    type: "object"
+    type: object
     properties:
       default_reviewers:
-        type: "array"
+        type: array
         items:
-          type: "string"
+          type: string
+          pattern: "^@[a-zA-Z0-9_-]+$"
+        description: "Default PR reviewers"
       domain_experts:
-        type: "object"
-        additionalProperties:
-          type: "string"
+        type: object
+        properties:
+          frontend:
+            type: string
+            pattern: "^@[a-zA-Z0-9_-]+$"
+          backend:
+            type: string
+            pattern: "^@[a-zA-Z0-9_-]+$"
+          infrastructure:
+            type: string
+            pattern: "^@[a-zA-Z0-9_-]+$"
+          design:
+            type: string
+            pattern: "^@[a-zA-Z0-9_-]+$"
+          security:
+            type: string
+            pattern: "^@[a-zA-Z0-9_-]+$"
+        description: "Domain-specific expert assignments"
+      tech_lead:
+        type: string
+        pattern: "^@[a-zA-Z0-9_-]+$"
+        description: "Technical lead for escalations"
+        
+  branches:
+    type: object
+    properties:
+      prefix:
+        type: string
+        default: "feature/"
+        description: "Prefix for feature branch names"
+      naming:
+        type: string
+        default: "issue-{number}-{title-slug}"
+        description: "Branch naming pattern"
+      cleanup_merged:
+        type: boolean
+        default: true
+        description: "Auto-delete merged feature branches"
+        
+  file_patterns:
+    type: object
+    properties:
+      research:
+        type: string
+        default: "{thoughts_directory}/shared/research/"
+        description: "Research document location pattern"
+      plans:
+        type: string
+        default: "{thoughts_directory}/shared/plans/"
+        description: "Implementation plan location pattern"
+      decisions:
+        type: string
+        default: "{thoughts_directory}/shared/decisions/"
+        description: "Decision record location pattern"
+        
+  workflow_customization:
+    type: object
+    properties:
+      auto_proceed_default:
+        type: boolean
+        default: false
+        description: "Default human validation setting"
+      phase_timeouts:
+        type: object
+        properties:
+          research_hours:
+            type: integer
+            default: 4
+          planning_hours:
+            type: integer
+            default: 2
+          implementation_hours:
+            type: integer
+            default: 24
+      parallel_pipelines:
+        type: integer
+        default: 3
+        minimum: 1
+        maximum: 10
+        description: "Maximum concurrent pipelines per repo"
+        
+  integration_settings:
+    type: object
+    properties:
+      linear_workspace:
+        type: string
+        description: "Linear workspace ID for issue sync"
+      jira_project:
+        type: string
+        description: "Jira project key for issue sync"
+      deployment_environments:
+        type: array
+        items:
+          type: string
+        description: "Available deployment environments"
+
+# Schema validation rules
+validation_rules:
+  repo_name:
+    - "Must be unique across all repositories"
+    - "Should match actual repository name"
+    - "Use kebab-case format (lowercase with hyphens)"
+    
+  base_branch:
+    - "Must exist in the target repository"
+    - "Should be the main development branch"
+    
+  thoughts_directory:
+    - "Must end with trailing slash"
+    - "Should be relative path from repository root"
+    - "Directory will be created if it doesn't exist"
+    
+  validation:
+    - "Commands in implementation_test_commands must be valid for the repository"
+    - "Required sections should match repository documentation standards"
+    
+  team:
+    - "All usernames must be valid GitHub usernames"
+    - "Users should have repository access"
+    
+  notifications:
+    - "Slack channels should exist and bot should have access"
+    - "Email addresses should be valid and monitored"
+
+# Configuration examples by repository type
+repository_type_examples:
+  frontend_application:
+    description: "Single-page applications, React/Vue/Angular apps"
+    typical_config:
+      validation:
+        research_min_refs: 3
+        implementation_test_commands:
+          - "npm test"
+          - "npm run lint" 
+          - "npm run typecheck"
+          - "npm run build"
+      workflow_customization:
+        phase_timeouts:
+          research_hours: 2
+          planning_hours: 1
+          implementation_hours: 8
+          
+  backend_api:
+    description: "REST APIs, GraphQL services, microservices"
+    typical_config:
+      validation:
+        research_min_refs: 5
+        implementation_test_commands:
+          - "make test"
+          - "make lint"
+          - "make security-scan"
+          - "docker build -t test ."
+        pr_required_sections:
+          - "API Changes"
+          - "Database Migrations" 
+          - "Security Review"
+      workflow_customization:
+        phase_timeouts:
+          research_hours: 4
+          planning_hours: 2
+          implementation_hours: 16
+          
+  infrastructure_platform:
+    description: "Infrastructure as code, platform services"
+    typical_config:
+      validation:
+        research_min_refs: 8
+        implementation_test_commands:
+          - "terraform plan"
+          - "terraform validate"
+          - "make security-scan"
+          - "make compliance-check"
+      notifications:
+        escalation_hours: 1
+      workflow_customization:
+        auto_proceed_default: false
+        parallel_pipelines: 1
+        phase_timeouts:
+          research_hours: 8
+          planning_hours: 4
+          implementation_hours: 48

@@ -1,0 +1,47 @@
+# platform-api configuration showing variations
+repo_name: "platform-api"
+base_branch: "main"
+thoughts_directory: "docs/decisions/"
+
+validation:
+  research_min_refs: 5  # Stricter requirements
+  implementation_test_commands:
+    - "npm test"
+    - "npm run lint"
+    - "npm run security-scan"
+    - "docker build -t test ."
+  pr_required_sections:
+    - "API Changes"
+    - "Database Migrations"
+    - "Security Review"
+    - "Performance Impact"
+
+notifications:
+  slack_channel: "#platform-engineering"
+  email_list: ["platform-team@company.com"]
+  escalation_hours: 1  # Faster escalation for critical platform
+
+team:
+  default_reviewers: ["@platform-lead", "@security-reviewer"]
+  domain_experts:
+    backend: "@senior-backend-dev"
+    infrastructure: "@platform-architect"
+    security: "@security-lead"
+  tech_lead: "@platform-lead"
+
+branches:
+  prefix: "feat/"
+  naming: "{number}-{title-slug}"
+  cleanup_merged: false  # Keep branches for audit
+
+workflow_customization:
+  auto_proceed_default: false
+  phase_timeouts:
+    research_hours: 8  # More time for platform research
+    planning_hours: 4
+    implementation_hours: 48
+  parallel_pipelines: 2  # Limit concurrent work
+
+integration_settings:
+  jira_project: "PLAT"
+  deployment_environments: ["dev", "staging", "prod-us", "prod-eu"]
