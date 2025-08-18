@@ -107,6 +107,9 @@ jobs:
           
           echo "config_source=$CONFIG_FILE" >> $GITHUB_OUTPUT
           
+          # Export CONFIG_FILE for Python script
+          export CONFIG_FILE
+          
           # Validate configuration against schema
           python3 << 'EOF'
           import yaml
@@ -145,7 +148,10 @@ jobs:
           schema = convert_to_json_schema(schema_doc)
           
           # Load and validate config
-          config_file = os.environ['CONFIG_FILE']
+          config_file = os.environ.get('CONFIG_FILE')
+          if not config_file:
+              print("❌ CONFIG_FILE environment variable not set")
+              sys.exit(1)
           with open(config_file, 'r') as f:
               config = yaml.safe_load(f)
           
