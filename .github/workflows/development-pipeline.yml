@@ -282,11 +282,18 @@ jobs:
           # Get base branch SHA
           BASE_SHA=$(git rev-parse "origin/$BASE_BRANCH")
           
-          # Create branch
-          git checkout -b "$BRANCH_NAME" "$BASE_SHA"
-          git push origin "$BRANCH_NAME"
-          
-          echo "✅ Created branch: $BRANCH_NAME from $BASE_BRANCH"
+          # Check if branch already exists
+          if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME already exists, checking it out and updating"
+            git checkout "$BRANCH_NAME" || git checkout -b "$BRANCH_NAME" "origin/$BRANCH_NAME"
+            git pull origin "$BRANCH_NAME"
+            echo "✅ Updated existing branch: $BRANCH_NAME"
+          else
+            echo "Creating new branch: $BRANCH_NAME"
+            git checkout -b "$BRANCH_NAME" "$BASE_SHA"
+            git push origin "$BRANCH_NAME"
+            echo "✅ Created new branch: $BRANCH_NAME from $BASE_BRANCH"
+          fi
 
       - name: Create decision record
         env:
