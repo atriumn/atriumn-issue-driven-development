@@ -4,406 +4,187 @@ on:
   workflow_call:
     inputs:
       repo_name:
-        description: 'Repository name'
+        required: true
+        type: string
+        description: 'Repository name for configuration lookup'
+      issue_number:
+        required: false
+        type: string
+        description: 'Issue number if called from issue context'
+    secrets:
+      REPO_TOKEN:
+        required: true
+        description: 'GitHub token with repository access'
+
+  # For testing - remove in production
+  workflow_dispatch:
+    inputs:
+      repo_name:
         required: true
         type: string
       issue_number:
-        description: 'Issue number'
         required: true
         type: string
-      branch_name:
-        description: 'Branch name'
-        required: false
-        type: string
-      pipeline_id:
-        description: 'Pipeline ID'
-        required: false
-        type: string
-      human_validation:
-        description: 'Enable human validation'
-        required: false
-        type: boolean
-        default: true
-      test_mode:
-        description: 'Run in test mode'
-        required: false
-        type: boolean
-        default: false
-    secrets:
-      REPO_TOKEN:
-        description: 'GitHub token with access to target repository'
-        required: true
 
 jobs:
-  setup-pipeline:
+  # Enhanced configuration loading job
+  load-and-validate-config:
     runs-on: ubuntu-latest
     outputs:
-      branch_name: ${{ steps.setup.outputs.branch_name }}
-      pipeline_id: ${{ steps.setup.outputs.pipeline_id }}
-      issue_title: ${{ steps.setup.outputs.issue_title }}
-      decision_record: ${{ steps.setup.outputs.decision_record }}
+      config: ${{ steps.config.outputs.config }}
+      config_source: ${{ steps.config.outputs.config_source }}
+      base_branch: ${{ steps.config.outputs.base_branch }}
+      thoughts_dir: ${{ steps.config.outputs.thoughts_dir }}
+      branch_prefix: ${{ steps.config.outputs.branch_prefix }}
+      validation_config: ${{ steps.config.outputs.validation_config }}
+      team_config: ${{ steps.config.outputs.team_config }}
+      workflow_config: ${{ steps.config.outputs.workflow_config }}
     steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: shared-workflows
+          
       - name: Checkout target repository
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
-          fetch-depth: 0
+          path: target-repo
           
-      - name: Setup pipeline
-        id: setup
+      - name: Install configuration validator
         run: |
-          echo "🔍 DEBUG: Setting up pipeline for issue #${{ inputs.issue_number }}"
-          echo "🔍 DEBUG: Repository name input: '${{ inputs.repo_name }}'"
-          echo "🔍 DEBUG: Full repository path: '${{ inputs.repo_name }}'"
-          echo "🔍 DEBUG: Issue number: '${{ inputs.issue_number }}'"
-          echo "🔍 DEBUG: GitHub context repository: '${{ github.repository }}'"
+          # Install yq for YAML processing and python for validation
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          pip install jsonschema pyyaml
+
+      - name: Load and validate configuration
+        id: config
+        run: |
+          cd target-repo
           
-          # Generate branch name if not provided
-          if [ -z "${{ inputs.branch_name }}" ]; then
-            BRANCH_NAME="feature/issue-${{ inputs.issue_number }}-pipeline"
-          else
-            BRANCH_NAME="${{ inputs.branch_name }}"
-          fi
-          
-          # Generate pipeline ID if not provided
-          if [ -z "${{ inputs.pipeline_id }}" ]; then
-            PIPELINE_ID="pipeline-${{ github.run_id }}-${{ inputs.issue_number }}"
-          else
-            PIPELINE_ID="${{ inputs.pipeline_id }}"
-          fi
-          
-          echo "🔍 DEBUG: Generated branch name: '$BRANCH_NAME'"
-          echo "🔍 DEBUG: Generated pipeline ID: '$PIPELINE_ID'"
-          
-          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "pipeline_id=$PIPELINE_ID" >> $GITHUB_OUTPUT
-          
-          # Get issue title from the target repository
-          echo "🔍 DEBUG: About to run: gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title"
-          echo "🔍 DEBUG: Testing token permissions:"
-          echo "🔍 DEBUG: Token source check:"
-          if [ -n "${{ secrets.REPO_TOKEN }}" ]; then
-            echo "✅ REPO_TOKEN secret is available"
-            echo "🔍 DEBUG: Token starts with: ${GH_TOKEN:0:10}..."
-          else
-            echo "❌ REPO_TOKEN secret is NOT available"
-            echo "🔍 DEBUG: Using default GITHUB_TOKEN instead"
-          fi
-          echo "🔍 DEBUG: Can access repository info?"
-          gh repo view ${{ inputs.repo_name }} --json name,owner || echo "❌ Cannot access repository"
-          echo "🔍 DEBUG: Can list issues in repository?"
-          gh issue list --repo ${{ inputs.repo_name }} --limit 5 || echo "❌ Cannot list issues"
-          echo "🔍 DEBUG: Available repos for authenticated user:"
-          gh repo list atriumn --limit 10
-          
-          ISSUE_TITLE=$(gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title)
-          echo "issue_title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
-          
-          # Generate decision record content
-          DECISION_RECORD_CONTENT=$(cat << 'RECORD_EOF'
-          # Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
-          
-          **Issue:** $ISSUE_TITLE
-          **Pipeline ID:** $PIPELINE_ID
-          **Branch:** $BRANCH_NAME
-          **Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          **Human Validation:** ${{ inputs.human_validation }}
-          
-          ## Pipeline Progress
-          
-          ### ✅ Research Phase
-          - **Status:** In Progress
-          - **Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          
-          Research phase initiated for issue #${{ inputs.issue_number }}.
-          
-          ### Planning Phase
-          - **Status:** Pending
-          
-          ### Implementation Phase  
-          - **Status:** Pending
-          
-          ### PR Phase
-          - **Status:** Pending
-          
-          ---
-          *Pipeline managed by atriumn-shared-workflows*
-          RECORD_EOF
+          # Try multiple configuration sources in order of preference
+          CONFIG_SOURCES=(
+            ".github/development-pipeline-config.yml"
+            ".github/dev-pipeline.yml"
+            "../shared-workflows/configs/${{ inputs.repo_name }}.yml"
+            "../shared-workflows/configs/default.yml"
           )
           
-          # Output the decision record content for the calling workflow to use
-          echo "decision_record<<DECISION_RECORD_EOF" >> $GITHUB_OUTPUT
-          echo "$DECISION_RECORD_CONTENT" >> $GITHUB_OUTPUT
-          echo "DECISION_RECORD_EOF" >> $GITHUB_OUTPUT
+          CONFIG_FILE=""
+          for source in "${CONFIG_SOURCES[@]}"; do
+            if [ -f "$source" ]; then
+              CONFIG_FILE="$source"
+              echo "Found config: $CONFIG_FILE"
+              break
+            fi
+          done
           
-          echo "✅ Pipeline setup complete"
-          echo "   Branch: $BRANCH_NAME"
-          echo "   Pipeline ID: $PIPELINE_ID"
-          echo "   Issue: #${{ inputs.issue_number }} - $ISSUE_TITLE"
-        env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
-
-  research-phase:
-    needs: setup-pipeline
-    runs-on: ubuntu-latest
-    outputs:
-      research_complete: ${{ steps.research.outputs.complete }}
-      research_summary: ${{ steps.research.outputs.summary }}
-      next_actions: ${{ steps.research.outputs.next_actions }}
-    steps:
-      - name: Checkout target repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
-          fetch-depth: 0
-          
-      - name: Research phase
-        id: research
-        run: |
-          echo "🔬 Starting research phase for issue #${{ inputs.issue_number }}"
-          
-          # Get issue details
-          ISSUE_DATA=$(gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title,body,labels,assignees)
-          ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
-          ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body')
-          
-          echo "📋 Issue: $ISSUE_TITLE"
-          echo "📝 Description: $ISSUE_BODY"
-          
-          # Simulate research analysis
-          RESEARCH_SUMMARY="Research completed for: $ISSUE_TITLE
-          
-          **Key Findings:**
-          - Issue requires accessibility improvements
-          - Focus areas: keyboard navigation, ARIA labels, color contrast
-          - Estimated complexity: Medium
-          - Files likely affected: UI components, CSS styles
-          
-          **Technical Approach:**
-          - Audit current accessibility state
-          - Implement WCAG 2.1 AA compliance
-          - Add automated accessibility testing
-          
-          **Dependencies:**
-          - Review existing accessibility testing setup
-          - Check for conflicting CSS rules
-          - Validate with screen readers"
-          
-          NEXT_ACTIONS="- Create feature branch
-          - Audit current accessibility implementation  
-          - Implement ARIA improvements
-          - Add keyboard navigation support
-          - Update CSS for better contrast
-          - Add automated tests
-          - Manual testing with assistive technologies"
-          
-          echo "complete=true" >> $GITHUB_OUTPUT
-          # Use simpler output format to avoid GitHub Actions parsing issues
-          echo "summary=Research completed for accessibility improvements. Key findings: keyboard navigation, ARIA labels, color contrast needed. Estimated complexity: Medium." >> $GITHUB_OUTPUT
-          echo "next_actions=Create feature branch, Audit accessibility, Implement ARIA improvements, Add keyboard navigation, Update CSS contrast, Add automated tests, Manual testing" >> $GITHUB_OUTPUT
-          
-          # Create research document using echo to avoid YAML parsing issues
-          mkdir -p thoughts/shared/research
-          {
-            echo "# Research Document - Issue #${{ inputs.issue_number }}"
-            echo ""
-            echo "Date: $(date -u +'%Y-%m-%d')"
-            echo "Researcher: Pipeline Bot"
-            echo "Issue: ${{ needs.setup-pipeline.outputs.issue_title }}"
-            echo ""
-            echo "## Research Question"
-            echo "How should we implement the requested changes for this issue?"
-            echo ""
-            echo "## Summary"
-            echo "Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements. Estimated complexity is Medium."
-            echo ""
-            echo "## Detailed Findings"
-            echo ""
-            echo "### Key Requirements"
-            echo "- Issue requires accessibility improvements"
-            echo "- Focus areas: keyboard navigation, ARIA labels, color contrast"
-            echo "- Estimated complexity: Medium"
-            echo "- Files likely affected: UI components, CSS styles"
-            echo ""
-            echo "### Technical Approach"
-            echo "- Audit current accessibility state"
-            echo "- Implement WCAG 2.1 AA compliance"
-            echo "- Add automated accessibility testing"
-            echo ""
-            echo "### Dependencies"
-            echo "- Review existing accessibility testing setup"
-            echo "- Check for conflicting CSS rules"
-            echo "- Validate with screen readers"
-            echo ""
-            echo "## Code References"
-            echo "- UI components in /src/components/"
-            echo "- CSS styles in /src/styles/"
-            echo "- Test files in /src/tests/"
-            echo ""
-            echo "## Architecture Insights"
-            echo "Current accessibility implementation needs enhancement to meet WCAG standards."
-            echo ""
-            echo "## Next Steps"
-            echo "- Create feature branch"
-            echo "- Audit current accessibility implementation"
-            echo "- Implement ARIA improvements"
-            echo "- Add keyboard navigation support"
-            echo "- Update CSS for better contrast"
-            echo "- Add automated tests"
-            echo "- Manual testing with assistive technologies"
-          } > thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
-
-          git add thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
-          git commit -m "Add research document for issue #${{ inputs.issue_number }}"
-          git push origin ${{ needs.setup-pipeline.outputs.branch_name }}
-          
-          echo "✅ Research phase complete - document created"
-        env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
-
-  validate-research:
-    needs: research-phase
-    runs-on: ubuntu-latest
-    outputs:
-      validation_status: ${{ steps.validate.outputs.status }}
-      planning_inputs: ${{ steps.validate.outputs.planning_inputs }}
-    steps:
-      - name: Validate research
-        id: validate
-        run: |
-          echo "🔍 Validating research phase results"
-          
-          if [ "${{ needs.research-phase.outputs.research_complete }}" = "true" ]; then
-            echo "✅ Research validation passed"
-            echo "status=approved" >> $GITHUB_OUTPUT
-            
-            PLANNING_INPUTS="Research Summary: ${{ needs.research-phase.outputs.research_summary }}
-            
-            Next Actions: ${{ needs.research-phase.outputs.next_actions }}
-            
-            Ready for planning phase."
-            
-            echo "planning_inputs<<PLANNING_EOF" >> $GITHUB_OUTPUT
-            echo "$PLANNING_INPUTS" >> $GITHUB_OUTPUT
-            echo "PLANNING_EOF" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Research validation failed"
-            echo "status=failed" >> $GITHUB_OUTPUT
-          fi
-
-  wait-for-approval:
-    needs: [research-phase, validate-research]
-    if: always()
-    runs-on: ubuntu-latest
-    outputs:
-      approval_status: ${{ steps.wait.outputs.status }}
-      approved_plan: ${{ steps.wait.outputs.plan }}
-    steps:
-      - name: Wait for human approval
-        id: wait
-        run: |
-          if [ "${{ inputs.human_validation }}" = "true" ]; then
-            echo "⏳ Human validation enabled - waiting for approval"
-            echo ""
-            echo "=== RESEARCH SUMMARY ==="
-            echo "${{ needs.research-phase.outputs.summary }}"
-            echo ""
-            echo "=== NEXT ACTIONS ==="
-            echo "${{ needs.research-phase.outputs.next_actions }}"
-            echo ""
-            echo "=== APPROVAL REQUIRED ==="
-            echo "Comment 'approve research' on issue #${{ inputs.issue_number }} to proceed"
-            echo ""
-            
-            # In a real implementation, this would wait for the approval comment
-            # For now, we'll simulate approval
-            echo "status=approved" >> $GITHUB_OUTPUT
-            echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
-          else
-            echo "🤖 Human validation disabled - auto-approving"
-            echo ""
-            echo "=== RESEARCH SUMMARY ==="
-            echo "${{ needs.research-phase.outputs.summary }}"
-            echo ""
-            echo "=== NEXT ACTIONS ==="
-            echo "${{ needs.research-phase.outputs.next_actions }}"
-            echo ""
-            echo "status=approved" >> $GITHUB_OUTPUT
-            echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
-          fi
-
-  complete-pipeline:
-    needs: [setup-pipeline, research-phase, validate-research, wait-for-approval]
-    if: always()
-    runs-on: ubuntu-latest
-    outputs:
-      pipeline_status: ${{ steps.complete.outputs.status }}
-      branch_name: ${{ needs.setup-pipeline.outputs.branch_name }}
-      pipeline_id: ${{ needs.setup-pipeline.outputs.pipeline_id }}
-      issue_title: ${{ needs.setup-pipeline.outputs.issue_title }}
-      research_summary: ${{ needs.research-phase.outputs.research_summary }}
-      next_actions: ${{ needs.research-phase.outputs.next_actions }}
-      decision_record_content: ${{ steps.complete.outputs.decision_record_content }}
-    steps:
-      - name: Complete pipeline
-        id: complete
-        run: |
-          echo "🏁 Completing pipeline for issue #${{ inputs.issue_number }}"
-          
-          if [ "${{ needs.validate-research.outputs.validation_status }}" = "approved" ]; then
-            echo "✅ Pipeline completed successfully"
-            echo "status=success" >> $GITHUB_OUTPUT
-            
-            # Create decision record file using echo to avoid YAML parsing issues
-            mkdir -p thoughts/shared/decisions
-            CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            
-            {
-              echo "# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}"
-              echo ""
-              echo "Issue: ${{ needs.setup-pipeline.outputs.issue_title }}"
-              echo "Pipeline ID: ${{ needs.setup-pipeline.outputs.pipeline_id }}"
-              echo "Branch: ${{ needs.setup-pipeline.outputs.branch_name }}"
-              echo "Started: $CURRENT_TIME"
-              echo "Completed: $CURRENT_TIME"
-              echo "Status: Research Complete"
-              echo ""
-              echo "## Research Summary"
-              echo "Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements."
-              echo ""
-              echo "## Next Actions"
-              echo "- Create feature branch ✅"
-              echo "- Audit current accessibility implementation"
-              echo "- Implement ARIA improvements"
-              echo "- Add keyboard navigation support"
-              echo "- Update CSS for better contrast"
-              echo "- Add automated tests"
-              echo "- Manual testing with assistive technologies"
-              echo ""
-              echo "## Research Document"
-              echo "See: thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md"
-              echo ""
-              echo "---"
-              echo "Pipeline managed by atriumn-shared-workflows"
-            } > thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
-            
-            git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
-            git commit -m "Add pipeline decision record for issue #${{ inputs.issue_number }}"
-            git push origin ${{ needs.setup-pipeline.outputs.branch_name }}
-            
-            echo "decision_record_content=Decision record created at thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md" >> $GITHUB_OUTPUT
-            
-          else
-            echo "❌ Pipeline failed - research validation not approved"
-            echo "status=failed" >> $GITHUB_OUTPUT
+          if [ -z "$CONFIG_FILE" ]; then
+            echo "❌ No configuration file found"
+            exit 1
           fi
           
-          echo "Pipeline outputs available for calling workflow to process"
+          echo "config_source=$CONFIG_FILE" >> $GITHUB_OUTPUT
+          
+          # Validate configuration against schema
+          python3 << 'EOF'
+          import yaml
+          import jsonschema
+          import sys
+          import os
+          
+          # Load schema
+          with open('../shared-workflows/configs/schema.yml', 'r') as f:
+              schema_doc = yaml.safe_load(f)
+              
+          # Convert our custom schema to JSON Schema
+          def convert_to_json_schema(custom_schema):
+              json_schema = {
+                  "type": "object",
+                  "properties": {},
+                  "required": custom_schema['configuration_schema']['required_fields']
+              }
+              
+              for field, definition in custom_schema['field_definitions'].items():
+                  json_schema['properties'][field] = {
+                      "type": definition['type']
+                  }
+                  
+                  if 'default' in definition:
+                      json_schema['properties'][field]['default'] = definition['default']
+                  if 'pattern' in definition:
+                      json_schema['properties'][field]['pattern'] = definition['pattern']
+                  if 'minimum' in definition:
+                      json_schema['properties'][field]['minimum'] = definition['minimum']
+                  if 'maximum' in definition:
+                      json_schema['properties'][field]['maximum'] = definition['maximum']
+                      
+              return json_schema
+          
+          schema = convert_to_json_schema(schema_doc)
+          
+          # Load and validate config
+          config_file = os.environ['CONFIG_FILE']
+          with open(config_file, 'r') as f:
+              config = yaml.safe_load(f)
+          
+          try:
+              jsonschema.validate(config, schema)
+              print("✅ Configuration validation passed")
+          except jsonschema.ValidationError as e:
+              print(f"❌ Configuration validation failed: {e.message}")
+              sys.exit(1)
+          
+          # Apply defaults for missing optional fields
+          default_config = schema_doc['field_definitions']
+          for field, definition in default_config.items():
+              if field not in config and 'default' in definition:
+                  config[field] = definition['default']
+                  print(f"Applied default for {field}: {definition['default']}")
+          
+          # Output processed config
+          with open('processed_config.yml', 'w') as f:
+              yaml.dump(config, f)
+          EOF
+          
+          # Extract key configuration values
+          BASE_BRANCH=$(yq eval '.base_branch' processed_config.yml)
+          THOUGHTS_DIR=$(yq eval '.thoughts_directory' processed_config.yml)
+          BRANCH_PREFIX=$(yq eval '.branches.prefix' processed_config.yml)
+          
+          echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+          echo "thoughts_dir=$THOUGHTS_DIR" >> $GITHUB_OUTPUT
+          echo "branch_prefix=$BRANCH_PREFIX" >> $GITHUB_OUTPUT
+          
+          # Store specialized config sections
+          VALIDATION_CONFIG=$(yq eval '.validation' processed_config.yml -o=json)
+          TEAM_CONFIG=$(yq eval '.team' processed_config.yml -o=json)
+          WORKFLOW_CONFIG=$(yq eval '.workflow_customization' processed_config.yml -o=json)
+          
+          echo "validation_config=$VALIDATION_CONFIG" >> $GITHUB_OUTPUT
+          echo "team_config=$TEAM_CONFIG" >> $GITHUB_OUTPUT
+          echo "workflow_config=$WORKFLOW_CONFIG" >> $GITHUB_OUTPUT
+          
+          # Store full config for other jobs
+          CONFIG_JSON=$(yq eval -o=json '.' processed_config.yml)
+          echo "config=$CONFIG_JSON" >> $GITHUB_OUTPUT
 
-  create-branch:
-    needs: setup-pipeline
+      - name: Report configuration details
+        run: |
+          echo "📝 Configuration loaded successfully"
+          echo "Source: ${{ steps.config.outputs.config_source }}"
+          echo "Repository: ${{ inputs.repo_name }}"
+          echo "Base branch: ${{ steps.config.outputs.base_branch }}"
+          echo "Thoughts directory: ${{ steps.config.outputs.thoughts_dir }}"
+          echo "Branch prefix: ${{ steps.config.outputs.branch_prefix }}"
+
+  # Triggered by: "@claude run development pipeline"
+  start-pipeline:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude run development pipeline')
+    needs: load-and-validate-config
     runs-on: ubuntu-latest
     outputs:
       branch_name: ${{ steps.branch.outputs.name }}
@@ -415,51 +196,461 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           fetch-depth: 0
           
-      - name: Create feature branch
-        id: branch
+      - name: Parse pipeline configuration
+        id: parse
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          BRANCH_NAME="${{ needs.setup-pipeline.outputs.branch_name }}"
-          echo "Creating branch: $BRANCH_NAME"
+          COMMENT="${{ github.event.comment.body }}"
           
-          # Check if branch already exists
-          if git show-ref --verify --quiet refs/remotes/origin/$BRANCH_NAME; then
-            echo "Branch already exists, switching to it"
-            git checkout $BRANCH_NAME
+          # Extract configuration from comment
+          if echo "$COMMENT" | grep -q "Human validation: false"; then
+            echo "human_validation=false" >> $GITHUB_OUTPUT
           else
-            echo "Creating new branch"
-            git checkout -b $BRANCH_NAME
-            git push -u origin $BRANCH_NAME
+            echo "human_validation=true" >> $GITHUB_OUTPUT
           fi
           
-          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "✅ Branch ready: $BRANCH_NAME"
+          if echo "$COMMENT" | grep -q "Base branch:"; then
+            BASE_OVERRIDE=$(echo "$COMMENT" | grep -o 'Base branch: [^[:space:]]*' | cut -d' ' -f3)
+            echo "base_branch_override=$BASE_OVERRIDE" >> $GITHUB_OUTPUT
+          fi
 
-  create-decision-record:
-    needs: [complete-pipeline, create-branch]
-    if: needs.complete-pipeline.outputs.pipeline_status == 'success'
+      - name: Create feature branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          # Configure git user for branch operations
+          git config user.name "Pipeline Bot"
+          git config user.email "pipeline@atriumn.com"
+          
+          # Use override or config default
+          BASE_BRANCH="${{ steps.parse.outputs.base_branch_override || needs.load-and-validate-config.outputs.base_branch }}"
+          
+          # Get issue title from GitHub
+          ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json title --jq '.title')
+          
+          # Create branch name
+          TITLE_SLUG=$(echo "$ISSUE_TITLE" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          BRANCH_NAME="${{ needs.load-and-validate-config.outputs.branch_prefix }}issue-${{ github.event.issue.number }}-$TITLE_SLUG"
+          
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          
+          # Get base branch SHA
+          BASE_SHA=$(git rev-parse "origin/$BASE_BRANCH")
+          
+          # Create branch
+          git checkout -b "$BRANCH_NAME" "$BASE_SHA"
+          git push origin "$BRANCH_NAME"
+          
+          echo "✅ Created branch: $BRANCH_NAME from $BASE_BRANCH"
+
+      - name: Create decision record
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.branch.outputs.name }}"
+          THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
+          ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json title --jq '.title')
+          
+          # Create decision record directory if it doesn't exist
+          mkdir -p "$THOUGHTS_DIR/shared/decisions"
+          
+          # Create initial decision record
+          cat > "$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md" << EOF
+          # Pipeline Decision Record - Issue #${{ github.event.issue.number }}: $ISSUE_TITLE
+          
+          ## Issue Context
+          - **Issue**: #${{ github.event.issue.number }}
+          - **Title**: $ISSUE_TITLE
+          - **Branch**: $BRANCH_NAME
+          - **Started**: $(date -Iseconds)
+          - **Repository**: ${{ inputs.repo_name }}
+          - **Base Branch**: ${{ steps.parse.outputs.base_branch_override || needs.load-and-validate-config.outputs.base_branch }}
+          
+          ## Current Status
+          - **Phase**: Research (Starting)
+          - **Completion**: 0%
+          - **Next Action**: Research codebase for issue requirements
+          
+          ## Pipeline Configuration
+          - **Human Validation**: ${{ steps.parse.outputs.human_validation }}
+          - **Thoughts Directory**: $THOUGHTS_DIR
+          
+          ---
+          
+          ## Research Phase (Starting)
+          - **Status**: In Progress
+          - **Started**: $(date -Iseconds)
+          
+          EOF
+          
+          # Commit decision record
+          git config user.name "Pipeline Bot"
+          git config user.email "pipeline@atriumn.com"
+          git add "$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
+          git commit -m "Pipeline: Initialize decision record for issue #${{ github.event.issue.number }}"
+          git push origin "$BRANCH_NAME"
+
+      - name: Add branch label to issue
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.branch.outputs.name }}"
+          
+          # Create and add branch label for tracking
+          gh label create "branch:$BRANCH_NAME" --color "0366d6" --description "Pipeline branch" --repo ${{ inputs.repo_name }} || true
+          gh issue edit ${{ github.event.issue.number }} --add-label "branch:$BRANCH_NAME" --repo ${{ inputs.repo_name }}
+
+      - name: Trigger research phase
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.branch.outputs.name }}"
+          THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
+          
+          gh issue comment ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --body "
+          🚀 **Development Pipeline Started**
+          
+          **Branch**: \`$BRANCH_NAME\` (created from \`${{ steps.parse.outputs.base_branch_override || needs.load-and-validate-config.outputs.base_branch }}\`)
+          **Pipeline Mode**: $(if [ '${{ steps.parse.outputs.human_validation }}' = 'true' ]; then echo 'Human validation required'; else echo 'Fully automated'; fi)
+          **Decision Record**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md\`
+          
+          ---
+          
+          @claude Please research the codebase for this issue following our research methodology:
+          
+          **CRITICAL: Use this exact branch for all work**
+          - Branch: \`$BRANCH_NAME\`
+          - Command: \`git checkout $BRANCH_NAME\`
+          - DO NOT create a new branch
+          
+          **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md\`
+          
+          **Research Requirements:**
+          - Read any mentioned ticket files completely first
+          - Checkout the branch: \`git checkout $BRANCH_NAME\`
+          - Create research document: \`$THOUGHTS_DIR/shared/research/$(date +%Y-%m-%d_%H-%M-%S)_issue-${{ github.event.issue.number }}.md\`
+          - Include YAML frontmatter with metadata
+          - Update the decision record with your findings
+          - Commit research document to the same branch: \`$BRANCH_NAME\`
+          
+          **Research Structure Required:**
+          - YAML frontmatter with metadata (date, researcher, git_commit, branch, etc.)
+          - Research Question section
+          - Summary section with high-level findings
+          - Detailed Findings with file:line references
+          - Code References section
+          - Architecture Insights
+          - Historical Context from thoughts/ directory
+          
+          **Git Operations (use exactly):**
+          \`\`\`bash
+          git checkout $BRANCH_NAME
+          git pull origin $BRANCH_NAME
+          git add $THOUGHTS_DIR/shared/research/[filename].md
+          git add $THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md
+          git commit -m \"Research: Issue #${{ github.event.issue.number }} analysis\"
+          git push origin $BRANCH_NAME
+          \`\`\`
+          
+          Please complete the research and commit both documents to the feature branch.
+          "
+
+  # Triggered by: Claude completing research
+  validate-research:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '✅ Research Phase Complete')
+    needs: load-config
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: shared-workflows
+          
       - name: Checkout target repository
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
-          ref: ${{ needs.create-branch.outputs.branch_name }}
           fetch-depth: 0
           
-      - name: Create decision record
+      - name: Get pipeline branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          echo "Creating pipeline decision record..."
-          mkdir -p thoughts/shared/decisions
+          # Extract branch name from issue labels
+          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")')
           
-          cat > thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md << 'EOF'
-          ${{ needs.complete-pipeline.outputs.decision_record_content }}
+          if [ -z "$BRANCH_NAME" ]; then
+            echo "❌ No pipeline branch found in issue labels"
+            exit 1
+          fi
+          
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Found pipeline branch: $BRANCH_NAME"
+
+      - name: Checkout pipeline branch
+        run: |
+          git checkout ${{ steps.branch.outputs.name }}
+          git pull origin ${{ steps.branch.outputs.name }}
+
+      - name: Find and validate research document
+        id: validate
+        run: |
+          THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
+          
+          # Find research document
+          RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+          
+          if [ -z "$RESEARCH_DOC" ]; then
+            echo "validation_passed=false" >> $GITHUB_OUTPUT
+            echo "error=No research document found for issue #${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "research_doc=$RESEARCH_DOC" >> $GITHUB_OUTPUT
+          
+          # Run validation script
+          if ./shared-workflows/scripts/validate-research.sh "$RESEARCH_DOC"; then
+            echo "validation_passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "validation_passed=false" >> $GITHUB_OUTPUT
+            echo "error=Research document validation failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update decision record with research results
+        if: steps.validate.outputs.validation_passed == 'true'
+        run: |
+          THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
+          
+          # Update decision record
+          cat >> "$DECISION_FILE" << EOF
+          
+          ### Research Phase (Complete ✅)
+          - **Completed**: $(date -Iseconds)
+          - **Document**: ${{ steps.validate.outputs.research_doc }}
+          - **Validation**: ✅ Passed automated validation
+          - **File References**: $(grep -c '`[^`]*\.[a-z]*:' "${{ steps.validate.outputs.research_doc }}")
+          - **Status**: Ready for planning phase
+          
           EOF
           
           git config user.name "Pipeline Bot"
           git config user.email "pipeline@atriumn.com"
-          git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
-          git commit -m "Add pipeline decision record for issue #${{ inputs.issue_number }}"
-          git push origin ${{ needs.create-branch.outputs.branch_name }}
+          git add "$DECISION_FILE"
+          git commit -m "Pipeline: Research phase completed for issue #${{ github.event.issue.number }}"
+          git push origin ${{ steps.branch.outputs.name }}
+
+      - name: Handle validation failure
+        if: steps.validate.outputs.validation_passed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --body "
+          ❌ **Research Validation Failed**
           
-          echo "✅ Decision record created and pushed"
+          **Error**: ${{ steps.validate.outputs.error }}
+          
+          **Action Required**: Please review and retry the research phase.
+          
+          **Common Issues:**
+          - Missing required sections in research document
+          - Insufficient file references (need at least 3)
+          - Invalid YAML frontmatter
+          - Document not committed to correct branch
+          
+          **To Retry**: The research phase can be restarted once issues are resolved.
+          "
+          exit 1
+
+      - name: Check pipeline mode
+        id: mode
+        run: |
+          # Extract pipeline mode from decision record
+          THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
+          
+          if grep -q "Human Validation.*false" "$DECISION_FILE"; then
+            echo "auto_proceed=true" >> $GITHUB_OUTPUT
+          else
+            echo "auto_proceed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Request human approval
+        if: steps.validate.outputs.validation_passed == 'true' && steps.mode.outputs.auto_proceed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          RESEARCH_DOC="${{ steps.validate.outputs.research_doc }}"
+          BRANCH_NAME="${{ steps.branch.outputs.name }}"
+          
+          gh issue comment ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --body "
+          🔍 **Research Validation Required**
+          
+          **Automated Validation**: ✅ Passed
+          - ✅ Document structure valid
+          - ✅ $(grep -c '`[^`]*\.[a-z]*:' "$RESEARCH_DOC") file references found (minimum 3 required)
+          - ✅ All required sections present
+          - ✅ YAML frontmatter complete
+          
+          **Research Document**: [\`$RESEARCH_DOC\`](https://github.com/${{ inputs.repo_name }}/blob/$BRANCH_NAME/$RESEARCH_DOC)
+          
+          **Human Review Needed**: 
+          @${{ github.event.issue.user.login }} Please review the research findings:
+          
+          **Review Questions:**
+          - Does the research adequately address the issue requirements?
+          - Are the code references sufficient for implementation planning?
+          - Any missing architectural considerations?
+          - Ready to proceed to planning phase?
+          
+          **Actions:**
+          - ✅ **Approve**: Comment \`approve research\`
+          - ❌ **Reject**: Comment \`reject research: [reason]\`
+          - 🔄 **Request changes**: Comment \`modify research: [specific requests]\`
+          "
+
+      - name: Auto-proceed to planning
+        if: steps.validate.outputs.validation_passed == 'true' && steps.mode.outputs.auto_proceed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --body "
+          🔍 **Research Validation**: ✅ Passed (automated)
+          **Auto-proceeding to Planning Phase**
+          
+          ---
+          
+          @claude Please create implementation plan based on this research:
+          
+          **Read complete pipeline context first:**
+          \`${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md\`
+          
+          **Critical Context:**
+          - Research findings are documented and validated
+          - Use the architectural decisions from research phase
+          - Current branch: \`${{ steps.branch.outputs.name }}\`
+          
+          **Planning Requirements:**
+          - Read research document from branch completely
+          - Create detailed plan at: \`${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/plans/issue-${{ github.event.issue.number }}-implementation.md\`
+          - Include phased implementation with clear success criteria
+          - Split success criteria into Automated vs Manual verification
+          - No unresolved open questions in final plan
+          - Update decision record with planning decisions
+          
+          **Plan Structure Required:**
+          - YAML frontmatter with metadata
+          - Current State Analysis with file:line references  
+          - Desired End State specification
+          - \"What We're NOT Doing\" section to prevent scope creep
+          - Phased implementation approach
+          - Testing Strategy
+          - Migration Notes if applicable
+          
+          **Success Criteria Format:**
+          \`\`\`
+          #### Automated Verification:
+          - [ ] Tests pass: \`make test\`
+          - [ ] Linting passes: \`make lint\`
+          - [ ] Type checking passes: \`make typecheck\`
+          
+          #### Manual Verification:  
+          - [ ] Feature works correctly in UI
+          - [ ] Performance acceptable under load
+          - [ ] Edge cases handled properly
+          \`\`\`
+          
+          **Git Operations:**
+          \`\`\`bash
+          git checkout ${{ steps.branch.outputs.name }}
+          git pull origin ${{ steps.branch.outputs.name }}
+          git add ${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/plans/[filename].md
+          git add ${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md
+          git commit -m \"Plan: Implementation plan for issue #${{ github.event.issue.number }}\"
+          git push origin ${{ steps.branch.outputs.name }}
+          \`\`\`
+          
+          Please create the plan following this methodology and commit it to the feature branch.
+          "
+
+  # Triggered by: "approve research" comment
+  trigger-planning:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, 'approve research')
+    needs: load-config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get pipeline branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")')
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Record approval and trigger planning
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --body "
+          ✅ **Research Approved by @${{ github.event.comment.user.login }}**
+          **Proceeding to Planning Phase**
+          
+          ---
+          
+          @claude Please create implementation plan based on this research:
+          
+          **Read complete pipeline context first:**
+          \`${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md\`
+          
+          **Critical Context:**
+          - Research findings are documented and validated
+          - Use the architectural decisions from research phase
+          - Current branch: \`${{ steps.branch.outputs.name }}\`
+          
+          **Planning Requirements:**
+          - Read research document from branch completely
+          - Create detailed plan at: \`${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/plans/issue-${{ github.event.issue.number }}-implementation.md\`
+          - Include phased implementation with clear success criteria
+          - Split success criteria into Automated vs Manual verification
+          - No unresolved open questions in final plan
+          - Update decision record with planning decisions
+          
+          **Plan Structure Required:**
+          - YAML frontmatter with metadata
+          - Current State Analysis with file:line references  
+          - Desired End State specification
+          - \"What We're NOT Doing\" section to prevent scope creep
+          - Phased implementation approach
+          - Testing Strategy
+          - Migration Notes if applicable
+          
+          **Success Criteria Format:**
+          \`\`\`
+          #### Automated Verification:
+          - [ ] Tests pass: \`make test\`
+          - [ ] Linting passes: \`make lint\`
+          - [ ] Type checking passes: \`make typecheck\`
+          
+          #### Manual Verification:  
+          - [ ] Feature works correctly in UI
+          - [ ] Performance acceptable under load
+          - [ ] Edge cases handled properly
+          \`\`\`
+          
+          **Git Operations:**
+          \`\`\`bash
+          git checkout ${{ steps.branch.outputs.name }}
+          git pull origin ${{ steps.branch.outputs.name }}
+          git add ${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/plans/[filename].md
+          git add ${{ needs.load-and-validate-config.outputs.thoughts_dir }}/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md
+          git commit -m \"Plan: Implementation plan for issue #${{ github.event.issue.number }}\"
+          git push origin ${{ steps.branch.outputs.name }}
+          \`\`\`
+          
+          Please create the plan following this methodology and commit it to the feature branch.
+          "
