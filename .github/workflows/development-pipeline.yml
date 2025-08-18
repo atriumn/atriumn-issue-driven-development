@@ -348,9 +348,10 @@ jobs:
         run: |
           BRANCH_NAME="${{ steps.branch.outputs.name }}"
           
-          # Create and add branch label for tracking
-          gh label create "branch:$BRANCH_NAME" --color "0366d6" --description "Pipeline branch" --repo ${{ inputs.repo_name }} || true
-          gh issue edit ${{ github.event.issue.number }} --add-label "branch:$BRANCH_NAME" --repo ${{ inputs.repo_name }}
+          # Create and add pipeline label for tracking
+          LABEL_NAME="pipeline-issue-${{ github.event.issue.number }}"
+          gh label create "$LABEL_NAME" --color "0366d6" --description "Pipeline: $BRANCH_NAME" --repo ${{ inputs.repo_name }} || true
+          gh issue edit ${{ github.event.issue.number }} --add-label "$LABEL_NAME" --repo ${{ inputs.repo_name }}
 
       - name: Trigger research phase
         env:
@@ -432,7 +433,8 @@ jobs:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           # Extract branch name from issue labels
-          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")')
+          # Get branch name from pipeline label description
+          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description | sub("Pipeline: "; "")')
           
           if [ -z "$BRANCH_NAME" ]; then
             echo "❌ No pipeline branch found in issue labels"
@@ -639,7 +641,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")')
+          # Get branch name from pipeline label description
+          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description | sub("Pipeline: "; "")')
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
       - name: Record approval and trigger planning
