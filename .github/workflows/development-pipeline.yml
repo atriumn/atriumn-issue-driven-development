@@ -401,7 +401,7 @@ jobs:
 
   # Triggered by: Claude completing research
   validate-research:
-    if: inputs.trigger_comment == '✅ ATRIUMN-RESEARCH-DONE'
+    if: contains(inputs.trigger_comment || '', '✅ ATRIUMN-RESEARCH-DONE')
     needs: [load-and-validate-config, start-pipeline]
     runs-on: ubuntu-latest
     steps:
