@@ -406,8 +406,11 @@ jobs:
           - Architecture Insights
           - Historical Context from thoughts/ directory
           
-          **IMPORTANT: When finished, post this exact completion signal:**
-          🟣 \\`ATRIUMN-RESEARCH-COMPLETE\\` (remove the backslashes)
+          **IMPORTANT: When finished, post this exact completion signal as a separate comment:**
+          
+          🟣 ATRIUMN-RESEARCH-COMPLETE
+          
+          (Copy the purple circle and text exactly as shown above)
           
           Please complete the research and commit both documents.
           "
