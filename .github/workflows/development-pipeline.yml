@@ -508,9 +508,9 @@ jobs:
           echo "research_doc=$RESEARCH_DOC" >> $GITHUB_OUTPUT
           echo "Found research document: $RESEARCH_DOC"
           
-          # Run validation script with config JSON (adjust path since we're in target repo directory)
+          # Run validation script with config JSON (shared-workflows checked out to ./shared-workflows/)
           CONFIG_JSON='${{ needs.load-and-validate-config.outputs.config }}'
-          if ../shared-workflows/scripts/validate-research.sh "$CONFIG_JSON" "$RESEARCH_DOC"; then
+          if ./shared-workflows/scripts/validate-research.sh "$CONFIG_JSON" "$RESEARCH_DOC"; then
             echo "validation_passed=true" >> $GITHUB_OUTPUT
             echo "✅ Research validation passed"
           else
