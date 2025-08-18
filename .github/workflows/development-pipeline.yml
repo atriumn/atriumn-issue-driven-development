@@ -277,9 +277,7 @@ jobs:
       issue_title: ${{ needs.setup-pipeline.outputs.issue_title }}
       research_summary: ${{ needs.research-phase.outputs.research_summary }}
       next_actions: ${{ needs.research-phase.outputs.next_actions }}
-      decision_record_content: ${{ steps.complete.outputs.decision_record }}
-      files_to_create: ${{ steps.complete.outputs.files_to_create }}
-      git_commands: ${{ steps.complete.outputs.git_commands }}
+      decision_record_content: ${{ steps.complete.outputs.decision_record_content }}
     steps:
       - name: Complete pipeline
         id: complete
@@ -290,7 +288,28 @@ jobs:
             echo "✅ Pipeline completed successfully"
             echo "status=success" >> $GITHUB_OUTPUT
             
-            echo "Pipeline completed successfully - decision records temporarily disabled due to YAML issues"
+            # Create decision record content
+            echo "decision_record_content<<EOF" >> $GITHUB_OUTPUT
+            cat >> $GITHUB_OUTPUT << 'EOF'
+# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
+
+**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
+**Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
+**Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
+**Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+**Completed:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+**Status:** Research Complete
+
+## Research Summary
+${{ needs.research-phase.outputs.research_summary }}
+
+## Next Actions
+${{ needs.research-phase.outputs.next_actions }}
+
+---
+*Pipeline managed by atriumn-shared-workflows*
+EOF
+            echo "EOF" >> $GITHUB_OUTPUT
             
           else
             echo "❌ Pipeline failed - research validation not approved"
