@@ -78,7 +78,7 @@ jobs:
           echo "🔍 DEBUG: Available repos for authenticated user:"
           gh repo list atriumn --limit 10
           
-          ISSUE_TITLE=$(gh issue view ${{ inputs.issue_number }} --repo atriumn/${{ inputs.repo_name }} --json title --jq .title)
+          ISSUE_TITLE=$(gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title)
           echo "issue_title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
           
           echo "✅ Pipeline setup complete"
@@ -211,7 +211,7 @@ jobs:
     steps:
       - name: Post approval request
         run: |
-          gh issue comment ${{ inputs.issue_number }} --repo atriumn/${{ inputs.repo_name }} --body "## 🔄 Research Phase Complete
+          gh issue comment ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --body "## 🔄 Research Phase Complete
           
           **Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
           **Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
@@ -242,7 +242,7 @@ jobs:
             STATUS="❌ Research phase failed"
           fi
           
-          gh issue comment ${{ inputs.issue_number }} --repo atriumn/${{ inputs.repo_name }} --body "## 📊 Pipeline Update
+          gh issue comment ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --body "## 📊 Pipeline Update
           
           **Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
           **Status:** $STATUS
