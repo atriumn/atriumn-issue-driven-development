@@ -29,6 +29,10 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      GITHUB_TOKEN:
+        description: 'GitHub token with access to target repository'
+        required: true
 
 jobs:
   setup-pipeline:
