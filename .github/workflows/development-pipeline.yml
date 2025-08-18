@@ -38,6 +38,10 @@ on:
         required: true
         description: 'GitHub token with repository access'
 
+  # Direct repository dispatch (more efficient than issue_comment)
+  repository_dispatch:
+    types: [pipeline-start, research-complete, approve-research, planning-complete, approve-plan, implementation-complete]
+
   # For testing - remove in production
   workflow_dispatch:
     inputs:
@@ -228,9 +232,9 @@ jobs:
           echo "Thoughts directory: ${{ steps.config.outputs.thoughts_dir }}"
           echo "Branch prefix: ${{ steps.config.outputs.branch_prefix }}"
 
-  # Triggered by: "@atriumn-pipeline start"
+  # Triggered by: "@atriumn start"
   start-pipeline:
-    if: inputs.trigger_comment == '@atriumn-pipeline start'
+    if: inputs.trigger_comment == '@atriumn start' || github.event.action == 'pipeline-start'
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     outputs:
@@ -274,12 +278,18 @@ jobs:
           # Use override or config default
           BASE_BRANCH="${{ steps.parse.outputs.base_branch_override || needs.load-and-validate-config.outputs.base_branch }}"
           
-          # Get issue title from GitHub
-          ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json title --jq '.title')
+          # Get issue number and title (handle both workflow_call and repository_dispatch)
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            ISSUE_NUMBER="${{ github.event.client_payload.issue_number }}"
+            ISSUE_TITLE="${{ github.event.client_payload.issue_title }}"
+          else
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+            ISSUE_TITLE=$(gh issue view $ISSUE_NUMBER --repo ${{ inputs.repo_name }} --json title --jq '.title')
+          fi
           
           # Create branch name
           TITLE_SLUG=$(echo "$ISSUE_TITLE" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
-          BRANCH_NAME="${{ needs.load-and-validate-config.outputs.branch_prefix }}issue-${{ github.event.issue.number }}-$TITLE_SLUG"
+          BRANCH_NAME="${{ needs.load-and-validate-config.outputs.branch_prefix }}issue-$ISSUE_NUMBER-$TITLE_SLUG"
           
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           
@@ -385,7 +395,7 @@ jobs:
           - Commit research document to your working branch
           
           **Research Structure Required:**
-          - YAML frontmatter with metadata (date, researcher, git_commit, branch, etc.)
+          - YAML frontmatter with metadata (required: date, researcher; recommended: git_commit, branch, issue_number, research_type)
           - Research Question section
           - Summary section with high-level findings
           - Detailed Findings with file:line references
@@ -394,14 +404,14 @@ jobs:
           - Historical Context from thoughts/ directory
           
           **IMPORTANT: When finished, post this exact completion signal:**
-          \`✅ ATRIUMN-RESEARCH-DONE\`
+          \`🟣 ATRIUMN-RESEARCH-COMPLETE\`
           
           Please complete the research and commit both documents.
           "
 
   # Triggered by: Claude completing research
   validate-research:
-    if: contains(inputs.trigger_comment || '', '✅ ATRIUMN-RESEARCH-DONE')
+    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-RESEARCH-COMPLETE') || github.event.action == 'research-complete'
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:

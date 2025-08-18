@@ -1,0 +1,22 @@
+# GitHub App manifest for Atriumn Issue-Driven Development
+name: Atriumn Issue-Driven Development
+description: AI-powered development pipeline that turns GitHub issues into working code
+url: https://github.com/atriumn/atriumn-issue-driven-development
+hook_attributes:
+  url: https://your-app-domain.com/api/webhook
+redirect_url: https://github.com/atriumn/atriumn-issue-driven-development
+
+# Permissions required by the app
+default_permissions:
+  issues: read
+  contents: read
+  actions: write
+  metadata: read
+
+# Events the app subscribes to
+default_events:
+  - issue_comment
+
+# Public app settings
+public: false
+request_oauth_on_install: false
