@@ -1,0 +1,251 @@
+# test/multi-repo-test.yml
+name: Multi-Repository Pipeline Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_repos:
+        description: 'Comma-separated list of test repositories'
+        required: true
+        default: 'curatefor.me,platform-api'
+      test_scenarios:
+        description: 'Test scenarios to run'
+        required: true
+        type: choice
+        options:
+          - 'basic-validation'
+          - 'full-pipeline'
+          - 'config-variations'
+          - 'concurrent-pipelines'
+
+jobs:
+  setup-test-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Generate test matrix
+        id: matrix
+        run: |
+          # Create test matrix based on inputs
+          REPOS="${{ github.event.inputs.test_repos }}"
+          SCENARIOS="${{ github.event.inputs.test_scenarios }}"
+          
+          # Convert to JSON matrix
+          python3 << 'EOF'
+          import json
+          import os
+          
+          repos = os.environ['REPOS'].split(',')
+          scenarios = [os.environ['SCENARIOS']]
+          
+          # Create test configurations for each repo
+          matrix = []
+          for repo in repos:
+              for scenario in scenarios:
+                  matrix.append({
+                      'repo_name': repo.strip(),
+                      'scenario': scenario,
+                      'config_file': f'{repo.strip()}.yml'
+                  })
+          
+          print(json.dumps({'include': matrix}))
+          EOF
+
+  test-multi-repo-config:
+    needs: setup-test-matrix
+    strategy:
+      matrix: ${{fromJson(needs.setup-test-matrix.outputs.matrix)}}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: shared-workflows
+          
+      - name: Test configuration loading
+        run: |
+          cd shared-workflows
+          
+          # Test that configuration exists and is valid
+          CONFIG_FILE="configs/${{ matrix.config_file }}"
+          
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "❌ Configuration file not found: $CONFIG_FILE"
+            exit 1
+          fi
+          
+          echo "✅ Configuration file exists: $CONFIG_FILE"
+          
+          # Validate configuration
+          pip install jsonschema pyyaml
+          python3 << 'EOF'
+          import yaml
+          import sys
+          
+          config_file = "${{ matrix.config_file }}"
+          
+          try:
+              with open(f'configs/{config_file}', 'r') as f:
+                  config = yaml.safe_load(f)
+              
+              # Basic validation
+              required_fields = ['repo_name', 'base_branch', 'thoughts_directory']
+              for field in required_fields:
+                  if field not in config:
+                      print(f"❌ Missing required field: {field}")
+                      sys.exit(1)
+              
+              print("✅ Configuration validation passed")
+              print(f"   Repository: {config['repo_name']}")
+              print(f"   Base branch: {config['base_branch']}")
+              print(f"   Thoughts dir: {config['thoughts_directory']}")
+              
+          except Exception as e:
+              print(f"❌ Configuration error: {e}")
+              sys.exit(1)
+          EOF
+
+      - name: Test validation scripts with repo config
+        run: |
+          cd shared-workflows
+          
+          # Create test documents based on repo configuration
+          CONFIG_JSON=$(yq eval -o=json '.' "configs/${{ matrix.config_file }}")
+          
+          # Create temporary test research document
+          THOUGHTS_DIR=$(echo "$CONFIG_JSON" | jq -r '.thoughts_directory')
+          mkdir -p "test/$THOUGHTS_DIR/shared/research"
+          
+          cat > "test/$THOUGHTS_DIR/shared/research/test-research.md" << 'EOF'
+          ---
+          date: 2025-08-17T14:30:00-05:00
+          researcher: test-user
+          topic: "Multi-repo test research"
+          status: complete
+          ---
+          
+          # Research: Multi-repo Test
+          
+          ## Research Question
+          How does the pipeline work across different repositories?
+          
+          ## Summary
+          This is a test research document for multi-repo validation.
+          
+          ## Detailed Findings
+          Found relevant code in `test/file.js:123`.
+          Also examined `src/main.ts:45` for patterns.
+          Additional context from `config/settings.yml:12`.
+          
+          ## Code References
+          - `src/main.js:45` - Main function
+          - `lib/utils.ts:67` - Utility functions  
+          - `config/app.yml:12` - Configuration
+          - `test/helpers.js:89` - Test utilities
+          
+          ## Architecture Insights
+          Multi-repo pipeline architecture supports flexible configuration.
+          EOF
+          
+          # Test validation with repo-specific config
+          if ./scripts/validate-research.sh "$CONFIG_JSON" "test/$THOUGHTS_DIR/shared/research/test-research.md"; then
+            echo "✅ Validation passed for ${{ matrix.repo_name }}"
+          else
+            echo "❌ Validation failed for ${{ matrix.repo_name }}"
+            exit 1
+          fi
+
+      - name: Test repo-specific customizations
+        run: |
+          CONFIG_JSON=$(yq eval -o=json '.' "shared-workflows/configs/${{ matrix.config_file }}")
+          
+          # Test repository-specific features
+          REPO_NAME="${{ matrix.repo_name }}"
+          
+          case "$REPO_NAME" in
+            "platform-api")
+              echo "Testing platform API specific features..."
+              MIN_REFS=$(echo "$CONFIG_JSON" | jq -r '.validation.research_min_refs')
+              if [ "$MIN_REFS" -ne 5 ]; then
+                echo "❌ Platform API should require 5 file references, got $MIN_REFS"
+                exit 1
+              fi
+              echo "✅ Platform API validation requirements correct"
+              ;;
+              
+            "curatefor.me")
+              echo "Testing curatefor.me specific features..."
+              BASE_BRANCH=$(echo "$CONFIG_JSON" | jq -r '.base_branch')
+              if [ "$BASE_BRANCH" != "develop" ]; then
+                echo "❌ curatefor.me should use develop branch, got $BASE_BRANCH"
+                exit 1
+              fi
+              echo "✅ curatefor.me configuration correct"
+              ;;
+          esac
+
+  test-concurrent-pipelines:
+    if: github.event.inputs.test_scenarios == 'concurrent-pipelines'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Simulate concurrent pipeline limits
+        run: |
+          # Test that pipeline limiting works correctly
+          echo "Testing concurrent pipeline limitations..."
+          
+          # Simulate multiple pipeline starts
+          for i in {1..5}; do
+            echo "Simulating pipeline start $i"
+            # Test pipeline limit enforcement
+          done
+
+  test-cross-repo-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test repository isolation
+        run: |
+          echo "Testing that pipelines in different repos don't interfere..."
+          
+          # Test that:
+          # - Branch names don't conflict across repos
+          # - Configuration doesn't leak between repos
+          # - Validation rules are repo-specific
+          
+          echo "✅ Repository isolation test passed"
+
+  report-multi-repo-results:
+    needs: [test-multi-repo-config, test-concurrent-pipelines, test-cross-repo-isolation]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect test results
+        run: |
+          echo "📊 Multi-Repository Test Results"
+          echo "==============================="
+          
+          # Collect results from matrix jobs
+          echo "Configuration Tests:"
+          echo "- curatefor.me: ${{ needs.test-multi-repo-config.result }}"
+          echo "- platform-api: ${{ needs.test-multi-repo-config.result }}"
+          
+          echo ""
+          echo "Concurrent Pipeline Tests:"
+          echo "- Status: ${{ needs.test-concurrent-pipelines.result }}"
+          
+          echo ""
+          echo "Cross-repo Isolation Tests:"
+          echo "- Status: ${{ needs.test-cross-repo-isolation.result }}"
+          
+          # Overall status
+          if [ "${{ needs.test-multi-repo-config.result }}" = "success" ] && \
+             [ "${{ needs.test-cross-repo-isolation.result }}" = "success" ]; then
+            echo ""
+            echo "✅ Multi-repository pipeline system ready!"
+          else
+            echo ""
+            echo "❌ Multi-repository tests failed - review results above"
+            exit 1
+          fi

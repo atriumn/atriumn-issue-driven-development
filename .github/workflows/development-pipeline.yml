@@ -406,14 +406,14 @@ jobs:
           - Historical Context from thoughts/ directory
           
           **IMPORTANT: When finished, post this exact completion signal:**
-          \`🚀 Atriumn Research Complete\`
+          \`✅ ATRIUMN-RESEARCH-DONE\`
           
           Please complete the research and commit both documents.
           "
 
   # Triggered by: Claude completing research
   validate-research:
-    if: contains(inputs.trigger_comment || '', '🚀 Atriumn Research Complete')
+    if: contains(inputs.trigger_comment || '', '✅ ATRIUMN-RESEARCH-DONE')
     needs: [load-and-validate-config, start-pipeline]
     runs-on: ubuntu-latest
     steps:

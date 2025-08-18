@@ -4,8 +4,18 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${1:-.github/development-pipeline-config.yml}"
-PLAN_DOC="${2}"
+
+# Parse arguments - if only one argument and it ends in .md, treat as plan doc
+if [ $# -eq 1 ] && [[ "$1" == *.md ]]; then
+    CONFIG_FILE=".github/development-pipeline-config.yml"
+    PLAN_DOC="$1"
+elif [ $# -eq 2 ]; then
+    CONFIG_FILE="$1"
+    PLAN_DOC="$2"
+else
+    CONFIG_FILE="${1:-.github/development-pipeline-config.yml}"
+    PLAN_DOC="${2}"
+fi
 
 load_config() {
     if [ -f "$CONFIG_FILE" ]; then
@@ -20,8 +30,11 @@ load_config() {
         exit 1
     fi
     
-    # Load required sections from config
-    mapfile -t REQUIRED_SECTIONS < <(yq eval '.validation.plan_required_sections[]' "$CONFIG_SOURCE")
+    # Load required sections from config (using portable approach)
+    REQUIRED_SECTIONS=()
+    while IFS= read -r line; do
+        REQUIRED_SECTIONS+=("$line")
+    done < <(yq eval '.validation.plan_required_sections[]' "$CONFIG_SOURCE")
 }
 
 validate_file_exists() {
@@ -75,11 +88,20 @@ validate_success_criteria() {
 }
 
 validate_no_open_questions() {
-    # Check for unresolved questions or TODOs
+    # Check for unresolved questions or TODOs (skip YAML frontmatter)
     local issues=("TODO" "FIXME" "XXX" "TBD")
     
+    # Skip YAML frontmatter when checking for issues
+    local content_without_frontmatter
+    if head -20 "$PLAN_DOC" | grep -q "^---"; then
+        # Find the end of frontmatter and get content after it
+        content_without_frontmatter=$(awk '/^---$/{if(++c==2) f=1; next} f' "$PLAN_DOC")
+    else
+        content_without_frontmatter=$(cat "$PLAN_DOC")
+    fi
+    
     for issue in "${issues[@]}"; do
-        if grep -q "$issue" "$PLAN_DOC"; then
+        if echo "$content_without_frontmatter" | grep -q "$issue"; then
             echo "❌ Found unresolved question or TODO: $issue"
             echo "   Implementation plan must resolve all questions before proceeding"
             exit 1
@@ -87,7 +109,7 @@ validate_no_open_questions() {
     done
     
     # Check for question marks pattern (???) - using simpler approach
-    if grep -q "???" "$PLAN_DOC"; then
+    if echo "$content_without_frontmatter" | grep -q "???"; then
         echo "❌ Found unresolved question or TODO: ???"
         echo "   Implementation plan must resolve all questions before proceeding"
         exit 1

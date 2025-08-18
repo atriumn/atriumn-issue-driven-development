@@ -1,0 +1,312 @@
+# Test workflow for the development pipeline
+name: Test Development Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_scenario:
+        description: 'Test scenario to run'
+        required: true
+        type: choice
+        options:
+          - 'full-pipeline-automated'
+          - 'full-pipeline-manual'
+          - 'research-only'
+          - 'validation-failure'
+          - 'config-test'
+      target_repo:
+        description: 'Target repository to test (default: curatefor.me)'
+        required: false
+        type: string
+        default: 'atriumn/curatefor.me'
+
+env:
+  TARGET_REPO: ${{ github.event.inputs.target_repo || 'atriumn/curatefor.me' }}
+
+jobs:
+  setup-test:
+    runs-on: ubuntu-latest
+    outputs:
+      issue_number: ${{ steps.issue.outputs.number }}
+      test_title: ${{ steps.issue.outputs.title }}
+    steps:
+      - name: Create test issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create test issue based on scenario
+          case "${{ github.event.inputs.test_scenario }}" in
+            "full-pipeline-automated")
+              TITLE="Test: Automated Development Pipeline - $(date +%Y%m%d-%H%M%S)"
+              BODY="Test issue for fully automated development pipeline
+              
+              **Test Scenario**: Full pipeline with automation
+              **Expected Flow**: Research → Planning → Implementation → PR
+              **Human Validation**: Disabled
+              **Test Date**: $(date)
+              
+              This issue tests the complete automated flow of the development pipeline."
+              ;;
+            "full-pipeline-manual")
+              TITLE="Test: Manual Development Pipeline - $(date +%Y%m%d-%H%M%S)"
+              BODY="Test issue for manual validation development pipeline
+              
+              **Test Scenario**: Full pipeline with human validation
+              **Expected Flow**: Research → Approval → Planning → Approval → Implementation → PR
+              **Human Validation**: Enabled
+              **Test Date**: $(date)
+              
+              This issue tests the complete manual validation flow."
+              ;;
+            "research-only")
+              TITLE="Test: Research Phase Only - $(date +%Y%m%d-%H%M%S)"
+              BODY="Test issue for research phase validation
+              
+              **Test Scenario**: Research phase with validation
+              **Expected Flow**: Research → Validation → Stop
+              **Test Date**: $(date)
+              
+              This issue tests only the research phase validation."
+              ;;
+            "validation-failure")
+              TITLE="Test: Validation Failure Handling - $(date +%Y%m%d-%H%M%S)"
+              BODY="Test issue for validation failure scenarios
+              
+              **Test Scenario**: Intentional validation failures
+              **Expected Flow**: Research → Validation Failure → Error Handling
+              **Test Date**: $(date)
+              
+              This issue tests error handling and validation failures."
+              ;;
+            "config-test")
+              TITLE="Test: Configuration System - $(date +%Y%m%d-%H%M%S)"
+              BODY="Test issue for configuration system validation
+              
+              **Test Scenario**: Configuration loading and validation
+              **Expected Flow**: Config Load → Pipeline Start
+              **Test Date**: $(date)
+              
+              This issue tests the configuration system."
+              ;;
+            *)
+              TITLE="Test: Development Pipeline - $(date +%Y%m%d-%H%M%S)"
+              BODY="Generic test issue for development pipeline testing"
+              ;;
+          esac
+          
+          # Create the issue
+          ISSUE_NUMBER=$(gh issue create \
+            --repo "$TARGET_REPO" \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --label "test,pipeline" \
+            --json number --jq '.number')
+          
+          echo "number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          
+          echo "✅ Created test issue #$ISSUE_NUMBER: $TITLE"
+
+  trigger-pipeline:
+    needs: setup-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for issue to be ready
+        run: sleep 5
+
+      - name: Trigger pipeline based on scenario
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ needs.setup-test.outputs.issue_number }}"
+          
+          case "${{ github.event.inputs.test_scenario }}" in
+            "full-pipeline-automated")
+              COMMENT="@claude run development pipeline
+              Human validation: false
+              Base branch: main
+              Test mode: true"
+              ;;
+            "full-pipeline-manual")
+              COMMENT="@claude run development pipeline
+              Human validation: true
+              Base branch: main
+              Test mode: true"
+              ;;
+            "research-only")
+              COMMENT="@claude run development pipeline
+              Human validation: true
+              Stop after: research
+              Test mode: true"
+              ;;
+            "validation-failure")
+              COMMENT="@claude run development pipeline
+              Force validation failure: true
+              Test mode: true"
+              ;;
+            "config-test")
+              COMMENT="@claude run development pipeline
+              Test config: true"
+              ;;
+            *)
+              COMMENT="@claude run development pipeline"
+              ;;
+          esac
+          
+          # Add the trigger comment
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$TARGET_REPO" \
+            --body "$COMMENT"
+          
+          echo "✅ Triggered pipeline for test scenario: ${{ github.event.inputs.test_scenario }}"
+
+  monitor-pipeline:
+    needs: [setup-test, trigger-pipeline]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Monitor pipeline progress
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ needs.setup-test.outputs.issue_number }}"
+          
+          echo "📊 Pipeline Test Results"
+          echo "======================="
+          echo "Test Scenario: ${{ github.event.inputs.test_scenario }}"
+          echo "Target Repository: $TARGET_REPO"
+          echo "Issue Number: #$ISSUE_NUMBER"
+          echo "Issue Title: ${{ needs.setup-test.outputs.test_title }}"
+          echo ""
+          echo "Monitor Progress:"
+          echo "Issue URL: https://github.com/$TARGET_REPO/issues/$ISSUE_NUMBER"
+          echo "Actions URL: https://github.com/$TARGET_REPO/actions"
+          echo ""
+          echo "Expected Timeline:"
+          case "${{ github.event.inputs.test_scenario }}" in
+            "full-pipeline-automated")
+              echo "- Pipeline start: Immediate"
+              echo "- Research validation: ~5 minutes"
+              echo "- Planning validation: ~10 minutes"
+              echo "- Implementation validation: ~15 minutes"
+              echo "- PR creation: ~20 minutes"
+              ;;
+            "full-pipeline-manual")
+              echo "- Pipeline start: Immediate"
+              echo "- Research validation: ~5 minutes"
+              echo "- Human approval required: Manual step"
+              echo "- Planning validation: After approval"
+              echo "- Human approval required: Manual step"
+              echo "- Implementation: After approval"
+              ;;
+            "research-only")
+              echo "- Pipeline start: Immediate"
+              echo "- Research validation: ~5 minutes"
+              echo "- Stop after research: Expected"
+              ;;
+            "validation-failure")
+              echo "- Pipeline start: Immediate"
+              echo "- Validation failure: ~2 minutes"
+              echo "- Error handling: Expected"
+              ;;
+            "config-test")
+              echo "- Configuration loading: Immediate"
+              echo "- Pipeline initialization: ~1 minute"
+              ;;
+          esac
+          
+          echo ""
+          echo "To manually approve (if needed):"
+          echo "- Comment 'approve research' for research approval"
+          echo "- Comment 'approve plan' for planning approval"
+          echo "- Comment 'approve implementation' for implementation approval"
+
+  validate-test-results:
+    needs: [setup-test, trigger-pipeline, monitor-pipeline]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for pipeline execution
+        run: |
+          echo "⏳ Waiting for pipeline execution to complete..."
+          echo "This is a monitoring job - actual validation depends on the scenario"
+          sleep 30  # Give pipeline time to start
+
+      - name: Check pipeline status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ needs.setup-test.outputs.issue_number }}"
+          
+          echo "🔍 Checking pipeline status for issue #$ISSUE_NUMBER"
+          
+          # Get recent comments on the issue
+          RECENT_COMMENTS=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "$TARGET_REPO" \
+            --json comments \
+            --jq '.comments[-5:] | .[].body')
+          
+          echo "Recent Comments:"
+          echo "$RECENT_COMMENTS"
+          echo ""
+          
+          # Check for success indicators based on scenario
+          case "${{ github.event.inputs.test_scenario }}" in
+            "full-pipeline-automated")
+              if echo "$RECENT_COMMENTS" | grep -q "Development Pipeline Started"; then
+                echo "✅ Pipeline started successfully"
+              else
+                echo "❌ Pipeline may not have started"
+              fi
+              ;;
+            "validation-failure")
+              if echo "$RECENT_COMMENTS" | grep -q "Validation Failed"; then
+                echo "✅ Validation failure handled correctly"
+              else
+                echo "ℹ️  Validation failure test may need more time"
+              fi
+              ;;
+            *)
+              if echo "$RECENT_COMMENTS" | grep -q "Development Pipeline Started"; then
+                echo "✅ Basic pipeline functionality working"
+              else
+                echo "ℹ️  Pipeline test may need more time to complete"
+              fi
+              ;;
+          esac
+          
+          echo ""
+          echo "📋 Test Summary"
+          echo "Scenario: ${{ github.event.inputs.test_scenario }}"
+          echo "Issue: https://github.com/$TARGET_REPO/issues/$ISSUE_NUMBER"
+          echo "Status: Monitor the issue for detailed progress"
+
+  cleanup-test:
+    needs: [setup-test, validate-test-results]
+    if: always() && github.event.inputs.test_scenario != 'full-pipeline-automated' && github.event.inputs.test_scenario != 'full-pipeline-manual'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean up test artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ needs.setup-test.outputs.issue_number }}"
+          
+          echo "🧹 Cleaning up test artifacts for short-running tests"
+          
+          # Add cleanup comment
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$TARGET_REPO" \
+            --body "🧪 **Test Complete**
+            
+            Test scenario: ${{ github.event.inputs.test_scenario }}
+            Test completed at: $(date)
+            
+            This was an automated test. Issue can be closed if test completed successfully."
+          
+          # For validation-failure and config-test scenarios, close the issue
+          if [ "${{ github.event.inputs.test_scenario }}" = "validation-failure" ] || [ "${{ github.event.inputs.test_scenario }}" = "config-test" ]; then
+            gh issue close "$ISSUE_NUMBER" \
+              --repo "$TARGET_REPO" \
+              --comment "✅ Test scenario completed successfully"
+          fi

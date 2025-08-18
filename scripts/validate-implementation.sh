@@ -20,7 +20,11 @@ load_config() {
         exit 1
     fi
     
-    mapfile -t TEST_COMMANDS < <(yq eval '.validation.implementation_test_commands[]' "$CONFIG_SOURCE")
+    # Load test commands from config (using portable approach)
+    TEST_COMMANDS=()
+    while IFS= read -r line; do
+        TEST_COMMANDS+=("$line")
+    done < <(yq eval '.validation.implementation_test_commands[]' "$CONFIG_SOURCE")
 }
 
 validate_branch_exists() {
