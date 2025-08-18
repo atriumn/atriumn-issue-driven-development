@@ -47,7 +47,11 @@ jobs:
       - name: Setup pipeline
         id: setup
         run: |
-          echo "Setting up pipeline for issue #${{ inputs.issue_number }}"
+          echo "🔍 DEBUG: Setting up pipeline for issue #${{ inputs.issue_number }}"
+          echo "🔍 DEBUG: Repository name input: '${{ inputs.repo_name }}'"
+          echo "🔍 DEBUG: Full repository path: 'atriumn/${{ inputs.repo_name }}'"
+          echo "🔍 DEBUG: Issue number: '${{ inputs.issue_number }}'"
+          echo "🔍 DEBUG: GitHub context repository: '${{ github.repository }}'"
           
           # Generate branch name if not provided
           if [ -z "${{ inputs.branch_name }}" ]; then
@@ -63,10 +67,17 @@ jobs:
             PIPELINE_ID="${{ inputs.pipeline_id }}"
           fi
           
+          echo "🔍 DEBUG: Generated branch name: '$BRANCH_NAME'"
+          echo "🔍 DEBUG: Generated pipeline ID: '$PIPELINE_ID'"
+          
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "pipeline_id=$PIPELINE_ID" >> $GITHUB_OUTPUT
           
           # Get issue title from the target repository
+          echo "🔍 DEBUG: About to run: gh issue view ${{ inputs.issue_number }} --repo atriumn/${{ inputs.repo_name }} --json title --jq .title"
+          echo "🔍 DEBUG: Available repos for authenticated user:"
+          gh repo list atriumn --limit 10
+          
           ISSUE_TITLE=$(gh issue view ${{ inputs.issue_number }} --repo atriumn/${{ inputs.repo_name }} --json title --jq .title)
           echo "issue_title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
           
