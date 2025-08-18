@@ -29,6 +29,10 @@ on:
         type: boolean
         default: false
         description: 'Run in test mode'
+      trigger_comment:
+        required: false
+        type: string
+        description: 'The comment body that triggered this workflow'
     secrets:
       REPO_TOKEN:
         required: true
@@ -224,9 +228,9 @@ jobs:
           echo "Thoughts directory: ${{ steps.config.outputs.thoughts_dir }}"
           echo "Branch prefix: ${{ steps.config.outputs.branch_prefix }}"
 
-  # Triggered by: "@atriumn-pipeline start" or "@claude run development pipeline"
+  # Triggered by: "@atriumn-pipeline start"
   start-pipeline:
-    if: github.event_name == 'issue_comment' && (contains(github.event.comment.body, '@atriumn-pipeline start') || contains(github.event.comment.body, '@claude run development pipeline'))
+    if: contains(inputs.trigger_comment || '', '@atriumn-pipeline start')
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     outputs:
@@ -371,20 +375,14 @@ jobs:
           
           @claude Please research the codebase for this issue following our research methodology:
           
-          **CRITICAL: Use this exact branch for all work**
-          - Branch: \`$BRANCH_NAME\`
-          - Command: \`git checkout $BRANCH_NAME\`
-          - DO NOT create a new branch
-          
           **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md\`
           
           **Research Requirements:**
           - Read any mentioned ticket files completely first
-          - Checkout the branch: \`git checkout $BRANCH_NAME\`
           - Create research document: \`$THOUGHTS_DIR/shared/research/$(date +%Y-%m-%d_%H-%M-%S)_issue-${{ github.event.issue.number }}.md\`
           - Include YAML frontmatter with metadata
           - Update the decision record with your findings
-          - Commit research document to the same branch: \`$BRANCH_NAME\`
+          - Commit research document to your working branch
           
           **Research Structure Required:**
           - YAML frontmatter with metadata (date, researcher, git_commit, branch, etc.)
@@ -395,22 +393,15 @@ jobs:
           - Architecture Insights
           - Historical Context from thoughts/ directory
           
-          **Git Operations (use exactly):**
-          \`\`\`bash
-          git checkout $BRANCH_NAME
-          git pull origin $BRANCH_NAME
-          git add $THOUGHTS_DIR/shared/research/[filename].md
-          git add $THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md
-          git commit -m \"Research: Issue #${{ github.event.issue.number }} analysis\"
-          git push origin $BRANCH_NAME
-          \`\`\`
+          **IMPORTANT: When finished, post this exact completion signal:**
+          \`🚀 Atriumn Research Complete\`
           
-          Please complete the research and commit both documents to the feature branch.
+          Please complete the research and commit both documents.
           "
 
   # Triggered by: Claude completing research
   validate-research:
-    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '✅ Research Phase Complete')
+    if: contains(inputs.trigger_comment || '', '🚀 Atriumn Research Complete')
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
@@ -444,33 +435,75 @@ jobs:
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Found pipeline branch: $BRANCH_NAME"
 
-      - name: Checkout pipeline branch
+      - name: Find Claude's research branch
+        id: claude_branch
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          git checkout ${{ steps.branch.outputs.name }}
-          git pull origin ${{ steps.branch.outputs.name }}
+          # Look for Claude's branch pattern: claude/issue-XX-*
+          CLAUDE_BRANCH=$(gh api "/repos/${{ inputs.repo_name }}/branches" --jq -r '.[] | select(.name | test("^claude/issue-${{ github.event.issue.number }}-[0-9]{8}-[0-9]{4}$")) | .name' | head -1)
+          
+          if [ -z "$CLAUDE_BRANCH" ]; then
+            echo "❌ No Claude research branch found for issue #${{ github.event.issue.number }}"
+            echo "claude_branch_found=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "claude_branch_found=true" >> $GITHUB_OUTPUT
+          echo "name=$CLAUDE_BRANCH" >> $GITHUB_OUTPUT
+          echo "Found Claude's research branch: $CLAUDE_BRANCH"
+
+      - name: Checkout pipeline branch and merge research
+        run: |
+          PIPELINE_BRANCH="${{ steps.branch.outputs.name }}"
+          CLAUDE_BRANCH="${{ steps.claude_branch.outputs.name }}"
+          
+          # Configure git user for merge operations
+          git config user.name "Pipeline Bot"
+          git config user.email "pipeline@atriumn.com"
+          
+          # Checkout and update pipeline branch
+          git checkout "$PIPELINE_BRANCH"
+          git pull origin "$PIPELINE_BRANCH"
+          
+          # Fetch Claude's branch
+          git fetch origin "$CLAUDE_BRANCH:$CLAUDE_BRANCH"
+          
+          echo "🔄 Merging research from $CLAUDE_BRANCH into $PIPELINE_BRANCH"
+          
+          # Merge Claude's research work (allow unrelated histories since Claude creates fresh branches)
+          git merge "$CLAUDE_BRANCH" --no-ff --allow-unrelated-histories -m "Pipeline: Merge research from Claude ($CLAUDE_BRANCH)"
+          
+          # Push the merged result
+          git push origin "$PIPELINE_BRANCH"
+          
+          echo "✅ Successfully merged Claude's research into pipeline branch"
 
       - name: Find and validate research document
         id: validate
         run: |
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
           
-          # Find research document
+          # Find research document (now in our pipeline branch after merge)
           RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
           
           if [ -z "$RESEARCH_DOC" ]; then
             echo "validation_passed=false" >> $GITHUB_OUTPUT
-            echo "error=No research document found for issue #${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+            echo "error=No research document found for issue #${{ github.event.issue.number }} after merging Claude's work" >> $GITHUB_OUTPUT
             exit 0
           fi
           
           echo "research_doc=$RESEARCH_DOC" >> $GITHUB_OUTPUT
+          echo "Found research document: $RESEARCH_DOC"
           
           # Run validation script
           if ./shared-workflows/scripts/validate-research.sh "$RESEARCH_DOC"; then
             echo "validation_passed=true" >> $GITHUB_OUTPUT
+            echo "✅ Research validation passed"
           else
             echo "validation_passed=false" >> $GITHUB_OUTPUT
             echo "error=Research document validation failed" >> $GITHUB_OUTPUT
+            echo "❌ Research validation failed"
           fi
 
       - name: Update decision record with research results
