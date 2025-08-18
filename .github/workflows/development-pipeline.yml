@@ -508,12 +508,34 @@ jobs:
           echo "research_doc=$RESEARCH_DOC" >> $GITHUB_OUTPUT
           echo "Found research document: $RESEARCH_DOC"
           
-          # Run validation script with config JSON (shared-workflows checked out to ./shared-workflows/)
+          # Debug: Check directory structure and find validation script
+          echo "=== DEBUG: Current working directory ==="
+          pwd
+          echo "=== DEBUG: Directory contents ==="
+          ls -la
+          echo "=== DEBUG: Looking for shared-workflows ==="
+          find . -name "shared-workflows" -type d
+          echo "=== DEBUG: Looking for validation script ==="
+          find . -name "validate-research.sh" -type f
+          echo "=== DEBUG: Check if script exists at expected path ==="
+          ls -la ./shared-workflows/scripts/ || echo "shared-workflows/scripts/ not found"
+          
+          # Run validation script with config JSON
           CONFIG_JSON='${{ needs.load-and-validate-config.outputs.config }}'
-          if ./shared-workflows/scripts/validate-research.sh "$CONFIG_JSON" "$RESEARCH_DOC"; then
-            echo "validation_passed=true" >> $GITHUB_OUTPUT
-            echo "✅ Research validation passed"
+          SCRIPT_PATH="./shared-workflows/scripts/validate-research.sh"
+          echo "=== DEBUG: Trying to run script at: $SCRIPT_PATH ==="
+          if [ -f "$SCRIPT_PATH" ]; then
+            echo "Script found, executing..."
+            if "$SCRIPT_PATH" "$CONFIG_JSON" "$RESEARCH_DOC"; then
+              echo "validation_passed=true" >> $GITHUB_OUTPUT
+              echo "✅ Research validation passed"
+            else
+              echo "validation_passed=false" >> $GITHUB_OUTPUT
+              echo "error=Research document validation failed" >> $GITHUB_OUTPUT
+              echo "❌ Research validation failed"
+            fi
           else
+            echo "❌ Validation script not found at $SCRIPT_PATH"
             echo "validation_passed=false" >> $GITHUB_OUTPUT
             echo "error=Research document validation failed" >> $GITHUB_OUTPUT
             echo "❌ Research validation failed"
