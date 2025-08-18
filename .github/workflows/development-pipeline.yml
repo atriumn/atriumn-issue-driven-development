@@ -80,6 +80,14 @@ jobs:
           # Get issue title from the target repository
           echo "🔍 DEBUG: About to run: gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title"
           echo "🔍 DEBUG: Testing token permissions:"
+          echo "🔍 DEBUG: Token source check:"
+          if [ -n "${{ secrets.REPO_TOKEN }}" ]; then
+            echo "✅ REPO_TOKEN secret is available"
+            echo "🔍 DEBUG: Token starts with: ${GH_TOKEN:0:10}..."
+          else
+            echo "❌ REPO_TOKEN secret is NOT available"
+            echo "🔍 DEBUG: Using default GITHUB_TOKEN instead"
+          fi
           echo "🔍 DEBUG: Can access repository info?"
           gh repo view ${{ inputs.repo_name }} --json name,owner || echo "❌ Cannot access repository"
           echo "🔍 DEBUG: Can list issues in repository?"
