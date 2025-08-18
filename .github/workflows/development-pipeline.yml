@@ -288,28 +288,35 @@ jobs:
             echo "✅ Pipeline completed successfully"
             echo "status=success" >> $GITHUB_OUTPUT
             
-            # Create decision record content
-            echo "decision_record_content<<EOF" >> $GITHUB_OUTPUT
-            cat >> $GITHUB_OUTPUT << 'EOF'
-# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
-
-**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
-**Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
-**Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
-**Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-**Completed:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-**Status:** Research Complete
-
-## Research Summary
-${{ needs.research-phase.outputs.research_summary }}
-
-## Next Actions
-${{ needs.research-phase.outputs.next_actions }}
-
----
-*Pipeline managed by atriumn-shared-workflows*
-EOF
-            echo "EOF" >> $GITHUB_OUTPUT
+            # Create decision record using environment variables
+            ISSUE_TITLE="${{ needs.setup-pipeline.outputs.issue_title }}"
+            PIPELINE_ID="${{ needs.setup-pipeline.outputs.pipeline_id }}"
+            BRANCH_NAME="${{ needs.setup-pipeline.outputs.branch_name }}"
+            RESEARCH_SUMMARY="${{ needs.research-phase.outputs.research_summary }}"
+            NEXT_ACTIONS="${{ needs.research-phase.outputs.next_actions }}"
+            CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            
+            {
+              echo "decision_record_content<<DECISION_RECORD_EOF"
+              echo "# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}"
+              echo ""
+              echo "**Issue:** $ISSUE_TITLE"
+              echo "**Pipeline ID:** $PIPELINE_ID"
+              echo "**Branch:** $BRANCH_NAME"
+              echo "**Started:** $CURRENT_TIME"
+              echo "**Completed:** $CURRENT_TIME"
+              echo "**Status:** Research Complete"
+              echo ""
+              echo "## Research Summary"
+              echo "$RESEARCH_SUMMARY"
+              echo ""
+              echo "## Next Actions"
+              echo "$NEXT_ACTIONS"
+              echo ""
+              echo "---"
+              echo "*Pipeline managed by atriumn-shared-workflows*"
+              echo "DECISION_RECORD_EOF"
+            } >> $GITHUB_OUTPUT
             
           else
             echo "❌ Pipeline failed - research validation not approved"
