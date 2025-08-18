@@ -200,14 +200,66 @@ jobs:
           - Manual testing with assistive technologies"
           
           echo "complete=true" >> $GITHUB_OUTPUT
-          echo "summary<<RESEARCH_EOF" >> $GITHUB_OUTPUT
-          echo "$RESEARCH_SUMMARY" >> $GITHUB_OUTPUT
-          echo "RESEARCH_EOF" >> $GITHUB_OUTPUT
-          echo "next_actions<<ACTIONS_EOF" >> $GITHUB_OUTPUT
-          echo "$NEXT_ACTIONS" >> $GITHUB_OUTPUT
-          echo "ACTIONS_EOF" >> $GITHUB_OUTPUT
+          # Use simpler output format to avoid GitHub Actions parsing issues
+          echo "summary=Research completed for accessibility improvements. Key findings: keyboard navigation, ARIA labels, color contrast needed. Estimated complexity: Medium." >> $GITHUB_OUTPUT
+          echo "next_actions=Create feature branch, Audit accessibility, Implement ARIA improvements, Add keyboard navigation, Update CSS contrast, Add automated tests, Manual testing" >> $GITHUB_OUTPUT
           
-          echo "✅ Research phase complete"
+          # Create research document
+          mkdir -p thoughts/shared/research
+          cat > thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md << 'RESEARCH_DOC'
+# Research Document - Issue #${{ inputs.issue_number }}
+
+**Date:** $(date -u +"%Y-%m-%d")
+**Researcher:** Pipeline Bot
+**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
+
+## Research Question
+How should we implement the requested changes for this issue?
+
+## Summary
+Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements. Estimated complexity is Medium.
+
+## Detailed Findings
+
+### Key Requirements
+- Issue requires accessibility improvements
+- Focus areas: keyboard navigation, ARIA labels, color contrast
+- Estimated complexity: Medium
+- Files likely affected: UI components, CSS styles
+
+### Technical Approach
+- Audit current accessibility state
+- Implement WCAG 2.1 AA compliance
+- Add automated accessibility testing
+
+### Dependencies
+- Review existing accessibility testing setup
+- Check for conflicting CSS rules
+- Validate with screen readers
+
+## Code References
+- UI components in `/src/components/`
+- CSS styles in `/src/styles/`
+- Test files in `/src/tests/`
+
+## Architecture Insights
+Current accessibility implementation needs enhancement to meet WCAG standards.
+
+## Next Steps
+- Create feature branch
+- Audit current accessibility implementation
+- Implement ARIA improvements
+- Add keyboard navigation support
+- Update CSS for better contrast
+- Add automated tests
+- Manual testing with assistive technologies
+RESEARCH_DOC
+
+          git add thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
+          git commit -m "Add research document for issue #${{ inputs.issue_number }}"
+          git push origin ${{ needs.setup-pipeline.outputs.branch_name }}
+          
+          echo "✅ Research phase complete - document created"
         env:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
 
@@ -254,13 +306,16 @@ jobs:
         run: |
           if [ "${{ inputs.human_validation }}" = "true" ]; then
             echo "⏳ Human validation enabled - waiting for approval"
-            echo "Research summary:"
-            echo "${{ needs.research-phase.outputs.research_summary }}"
             echo ""
-            echo "Next actions:"
+            echo "=== RESEARCH SUMMARY ==="
+            echo "${{ needs.research-phase.outputs.summary }}"
+            echo ""
+            echo "=== NEXT ACTIONS ==="
             echo "${{ needs.research-phase.outputs.next_actions }}"
             echo ""
+            echo "=== APPROVAL REQUIRED ==="
             echo "Comment 'approve research' on issue #${{ inputs.issue_number }} to proceed"
+            echo ""
             
             # In a real implementation, this would wait for the approval comment
             # For now, we'll simulate approval
@@ -268,6 +323,13 @@ jobs:
             echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
           else
             echo "🤖 Human validation disabled - auto-approving"
+            echo ""
+            echo "=== RESEARCH SUMMARY ==="
+            echo "${{ needs.research-phase.outputs.summary }}"
+            echo ""
+            echo "=== NEXT ACTIONS ==="
+            echo "${{ needs.research-phase.outputs.next_actions }}"
+            echo ""
             echo "status=approved" >> $GITHUB_OUTPUT
             echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
           fi
@@ -294,35 +356,46 @@ jobs:
             echo "✅ Pipeline completed successfully"
             echo "status=success" >> $GITHUB_OUTPUT
             
-            # Create decision record using environment variables
-            ISSUE_TITLE="${{ needs.setup-pipeline.outputs.issue_title }}"
-            PIPELINE_ID="${{ needs.setup-pipeline.outputs.pipeline_id }}"
-            BRANCH_NAME="${{ needs.setup-pipeline.outputs.branch_name }}"
-            RESEARCH_SUMMARY="${{ needs.research-phase.outputs.research_summary }}"
-            NEXT_ACTIONS="${{ needs.research-phase.outputs.next_actions }}"
+            # Create decision record file
+            mkdir -p thoughts/shared/decisions
             CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             
-            {
-              echo "decision_record_content<<DECISION_RECORD_EOF"
-              echo "# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}"
-              echo ""
-              echo "**Issue:** $ISSUE_TITLE"
-              echo "**Pipeline ID:** $PIPELINE_ID"
-              echo "**Branch:** $BRANCH_NAME"
-              echo "**Started:** $CURRENT_TIME"
-              echo "**Completed:** $CURRENT_TIME"
-              echo "**Status:** Research Complete"
-              echo ""
-              echo "## Research Summary"
-              echo "$RESEARCH_SUMMARY"
-              echo ""
-              echo "## Next Actions"
-              echo "$NEXT_ACTIONS" | sed 's/^[0-9]\+\./  -/g'
-              echo ""
-              echo "---"
-              echo "*Pipeline managed by atriumn-shared-workflows*"
-              echo "DECISION_RECORD_EOF"
-            } >> $GITHUB_OUTPUT
+            cat > thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md << 'DECISION_DOC'
+# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
+
+**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
+**Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
+**Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
+**Started:** $CURRENT_TIME
+**Completed:** $CURRENT_TIME
+**Status:** Research Complete
+
+## Research Summary
+Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements. 
+
+## Next Actions
+- Create feature branch ✅ 
+- Audit current accessibility implementation
+- Implement ARIA improvements
+- Add keyboard navigation support
+- Update CSS for better contrast
+- Add automated tests
+- Manual testing with assistive technologies
+
+## Research Document
+See: thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
+
+---
+*Pipeline managed by atriumn-shared-workflows*
+DECISION_DOC
+
+            sed -i "s/\$CURRENT_TIME/$CURRENT_TIME/g" thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
+            
+            git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
+            git commit -m "Add pipeline decision record for issue #${{ inputs.issue_number }}"
+            git push origin ${{ needs.setup-pipeline.outputs.branch_name }}
+            
+            echo "decision_record_content=Decision record created at thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md" >> $GITHUB_OUTPUT
             
           else
             echo "❌ Pipeline failed - research validation not approved"
