@@ -41,6 +41,7 @@ jobs:
       branch_name: ${{ steps.setup.outputs.branch_name }}
       pipeline_id: ${{ steps.setup.outputs.pipeline_id }}
       issue_title: ${{ steps.setup.outputs.issue_title }}
+      decision_record: ${{ steps.setup.outputs.decision_record }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -97,6 +98,43 @@ jobs:
           
           ISSUE_TITLE=$(gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title)
           echo "issue_title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
+          
+          # Generate decision record content
+          DECISION_RECORD_CONTENT=$(cat << 'RECORD_EOF'
+          # Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
+          
+          **Issue:** $ISSUE_TITLE
+          **Pipeline ID:** $PIPELINE_ID
+          **Branch:** $BRANCH_NAME
+          **Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Human Validation:** ${{ inputs.human_validation }}
+          
+          ## Pipeline Progress
+          
+          ### ✅ Research Phase
+          - **Status:** In Progress
+          - **Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          Research phase initiated for issue #${{ inputs.issue_number }}.
+          
+          ### Planning Phase
+          - **Status:** Pending
+          
+          ### Implementation Phase  
+          - **Status:** Pending
+          
+          ### PR Phase
+          - **Status:** Pending
+          
+          ---
+          *Pipeline managed by atriumn-shared-workflows*
+          RECORD_EOF
+          )
+          
+          # Output the decision record content for the calling workflow to use
+          echo "decision_record<<DECISION_RECORD_EOF" >> $GITHUB_OUTPUT
+          echo "$DECISION_RECORD_CONTENT" >> $GITHUB_OUTPUT
+          echo "DECISION_RECORD_EOF" >> $GITHUB_OUTPUT
           
           echo "✅ Pipeline setup complete"
           echo "   Branch: $BRANCH_NAME"
@@ -188,7 +226,14 @@ jobs:
           git config user.email "pipeline@atriumn.com"
           git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
           git commit -m "Initialize pipeline decision record for issue #${{ inputs.issue_number }}"
-          git push origin ${{ needs.setup-pipeline.outputs.branch_name }}
+          
+          # Skip push in test mode due to cross-repo write restrictions
+          if [ "${{ inputs.test_mode }}" = "false" ]; then
+            git push origin ${{ needs.setup-pipeline.outputs.branch_name }}
+            echo "✅ Decision record pushed to repository"
+          else
+            echo "⚠️ Skipping push in test mode (decision record created locally)"
+          fi
           
           echo "✅ Decision record initialized"
 
