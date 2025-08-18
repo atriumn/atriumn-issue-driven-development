@@ -183,18 +183,37 @@ jobs:
           echo "thoughts_dir=$THOUGHTS_DIR" >> $GITHUB_OUTPUT
           echo "branch_prefix=$BRANCH_PREFIX" >> $GITHUB_OUTPUT
           
-          # Store specialized config sections
-          VALIDATION_CONFIG=$(yq eval '.validation' processed_config.yml -o=json)
-          TEAM_CONFIG=$(yq eval '.team' processed_config.yml -o=json)
-          WORKFLOW_CONFIG=$(yq eval '.workflow_customization' processed_config.yml -o=json)
+          # Store specialized config sections - properly escaped for GitHub Actions
+          VALIDATION_CONFIG=$(yq eval '.validation' processed_config.yml -o=json -I=0)
+          TEAM_CONFIG=$(yq eval '.team' processed_config.yml -o=json -I=0)  
+          WORKFLOW_CONFIG=$(yq eval '.workflow_customization' processed_config.yml -o=json -I=0)
           
-          echo "validation_config=$VALIDATION_CONFIG" >> $GITHUB_OUTPUT
-          echo "team_config=$TEAM_CONFIG" >> $GITHUB_OUTPUT
-          echo "workflow_config=$WORKFLOW_CONFIG" >> $GITHUB_OUTPUT
+          # Use heredoc to properly handle JSON with special characters
+          {
+            echo "validation_config<<EOF"
+            echo "$VALIDATION_CONFIG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
           
-          # Store full config for other jobs
-          CONFIG_JSON=$(yq eval -o=json '.' processed_config.yml)
-          echo "config=$CONFIG_JSON" >> $GITHUB_OUTPUT
+          {
+            echo "team_config<<EOF"
+            echo "$TEAM_CONFIG" 
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+          
+          {
+            echo "workflow_config<<EOF"
+            echo "$WORKFLOW_CONFIG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+          
+          # Store full config for other jobs using heredoc
+          CONFIG_JSON=$(yq eval -o=json -I=0 '.' processed_config.yml)
+          {
+            echo "config<<EOF"
+            echo "$CONFIG_JSON"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Report configuration details
         run: |
