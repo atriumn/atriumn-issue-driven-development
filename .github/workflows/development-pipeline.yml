@@ -418,22 +418,16 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           fetch-depth: 0
           
-      - name: Get pipeline branch
+      - name: Create pipeline branch name
         id: branch
-        env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          # Extract branch name from issue labels
-          # Get branch name from pipeline label description  
-          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description' | sed 's/^Pipeline: //')
-          
-          if [ -z "$BRANCH_NAME" ]; then
-            echo "❌ No pipeline branch found in issue labels"
-            exit 1
-          fi
+          # Create pipeline branch name from issue title
+          ISSUE_TITLE="${{ github.event.issue.title || 'pipeline-task' }}"
+          TITLE_SLUG=$(echo "$ISSUE_TITLE" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          BRANCH_NAME="feature/issue-${{ github.event.issue.number }}-$TITLE_SLUG"
           
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "Found pipeline branch: $BRANCH_NAME"
+          echo "Pipeline branch: $BRANCH_NAME"
 
       - name: Find Claude's research branch
         id: claude_branch
