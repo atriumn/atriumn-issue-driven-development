@@ -378,7 +378,7 @@ jobs:
   # Triggered by: Claude completing research
   validate-research:
     if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '✅ Research Phase Complete')
-    needs: load-config
+    needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
       - name: Checkout shared workflows
@@ -599,7 +599,7 @@ jobs:
   # Triggered by: "approve research" comment
   trigger-planning:
     if: github.event_name == 'issue_comment' && contains(github.event.comment.body, 'approve research')
-    needs: load-config
+    needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
       - name: Get pipeline branch
