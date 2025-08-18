@@ -14,25 +14,30 @@ atriumn-shared-workflows/
 ├── .gitignore                         # Git ignore patterns
 ├── scripts/                           # Validation scripts
 │   ├── validate-research.sh           # Research phase validation
+│   ├── validate-research-multi.sh     # Multi-repo research validation (Phase 4)
 │   ├── validate-plan.sh              # Planning phase validation
 │   ├── validate-implementation.sh    # Implementation validation
 │   ├── validate-pr.sh                # Pull request validation
+│   ├── validate-config.py            # Configuration validation (Phase 4)
 │   └── manage-decision-record.py     # Decision record management (Phase 3)
 ├── configs/                          # Configuration templates
 │   ├── default.yml                   # Default configuration
 │   ├── curatefor.me.yml              # CurateFor.me specific config
+│   ├── platform-api.yml             # Platform API specific config (Phase 4)
 │   └── schema.yml                    # Configuration schema
 ├── templates/                        # Reusable templates
 │   ├── decision-record-template.md   # Decision record template
 │   ├── repo-workflow-template.yml    # Repository workflow template (Phase 1-2)
 │   └── enhanced-repo-workflow-template.yml # Enhanced workflow (Phase 3)
 ├── docs/                            # Documentation
-│   └── phase3-branch-safety-context-preservation.md # Phase 3 features
+│   ├── phase3-branch-safety-context-preservation.md # Phase 3 features
+│   └── repository-onboarding.md     # Multi-repo onboarding guide (Phase 4)
 ├── test/                             # Test suite
 │   ├── test-validation-scripts.sh    # Validation script tests
 │   └── test-data/                    # Test fixtures (auto-generated)
 └── .github/workflows/                # GitHub Actions workflows
     ├── development-pipeline.yml      # Main development pipeline (Phase 2)
+    ├── multi-repo-test.yml          # Multi-repository testing (Phase 4)
     └── test-pipeline.yml             # Pipeline testing workflow
 ```
 
@@ -493,6 +498,224 @@ python scripts/manage-decision-record.py thoughts/shared/decisions/pipeline-issu
 ### Phase 3 Documentation
 
 For complete Phase 3 feature documentation, see: [`docs/phase3-branch-safety-context-preservation.md`](docs/phase3-branch-safety-context-preservation.md)
+
+## Phase 4: Multi-Repo Configuration & Testing
+
+Phase 4 introduces comprehensive multi-repository support with flexible configuration and advanced testing capabilities:
+
+### Multi-Repository Configuration System
+- **Schema-based validation**: Comprehensive configuration schema with validation rules
+- **Repository-specific configs**: Tailored settings for different repository types
+- **Configuration recommendations**: Intelligent suggestions based on repository patterns
+- **Backward compatibility**: Seamless integration with existing Phase 1-3 workflows
+
+### Enhanced Validation Scripts
+- **Multi-repo awareness**: Scripts adapt to repository-specific validation rules
+- **JSON/YAML configuration support**: Flexible configuration input methods
+- **Repository-specific patterns**: Validation rules that adapt to different repo types
+- **Quality recommendations**: Automated suggestions for improving validation rules
+
+### Advanced Testing Framework
+- **Multi-repository testing**: Concurrent testing across different repository configurations
+- **Configuration validation**: Automated testing of configuration schemas and recommendations
+- **Cross-repo isolation**: Ensures repository configurations don't interfere with each other
+- **Concurrent pipeline testing**: Validates parallel pipeline limits and behavior
+
+### Repository Onboarding
+- **Comprehensive guide**: Step-by-step onboarding for different repository types
+- **Configuration examples**: Pre-built configurations for common scenarios
+- **Quick start templates**: 5-minute setup for new repositories
+- **Best practices**: Team adoption and maintenance guidelines
+
+### Phase 4 Features
+
+#### Configuration Schema
+```yaml
+# configs/schema.yml - Complete configuration schema
+configuration_schema:
+  required_fields: [repo_name, base_branch, thoughts_directory]
+  optional_fields: [validation, notifications, team, branches, ...]
+
+field_definitions:
+  repo_name:
+    type: "string"
+    pattern: "^[a-zA-Z0-9.-]+$"
+    description: "Repository name"
+  validation:
+    type: "object"
+    properties:
+      research_min_refs:
+        type: "integer"
+        minimum: 1
+        maximum: 20
+        default: 3
+```
+
+#### Multi-Repository Validation
+```bash
+# Repository-specific validation with config file
+./scripts/validate-research-multi.sh configs/platform-api.yml research.md
+
+# JSON configuration support
+./scripts/validate-research-multi.sh '{"repo_name":"platform-api","validation":{"research_min_refs":5}}' research.md
+
+# Automatic repository pattern detection
+./scripts/validate-config.py configs/platform-api.yml --report
+```
+
+#### Configuration Management
+```bash
+# Validate configuration against schema
+python scripts/validate-config.py configs/curatefor.me.yml
+
+# Generate configuration report with recommendations
+python scripts/validate-config.py configs/platform-api.yml --report
+
+# JSON output for automation
+python scripts/validate-config.py configs/curatefor.me.yml --output json
+```
+
+#### Multi-Repository Testing
+```bash
+# Test specific repositories
+gh workflow run multi-repo-test.yml -f test_repos="curatefor.me,platform-api" -f test_scenarios="basic-validation"
+
+# Test concurrent pipeline limits
+gh workflow run multi-repo-test.yml -f test_scenarios="concurrent-pipelines"
+
+# Test cross-repository isolation
+gh workflow run multi-repo-test.yml -f test_scenarios="config-variations"
+```
+
+### Repository Types and Configurations
+
+#### Frontend Applications
+```yaml
+repo_name: "frontend-app"
+base_branch: "main"
+validation:
+  research_min_refs: 3
+  implementation_test_commands:
+    - "npm test"
+    - "npm run lint"
+    - "npm run build"
+workflow_customization:
+  phase_timeouts:
+    implementation_hours: 8
+```
+
+#### Backend APIs
+```yaml
+repo_name: "api-service"
+base_branch: "develop"
+validation:
+  research_min_refs: 5
+  implementation_test_commands:
+    - "make test"
+    - "make security-scan"
+  pr_required_sections:
+    - "API Changes"
+    - "Security Review"
+workflow_customization:
+  phase_timeouts:
+    implementation_hours: 16
+```
+
+#### Infrastructure/Platform
+```yaml
+repo_name: "platform-infrastructure"
+validation:
+  research_min_refs: 8
+  implementation_test_commands:
+    - "terraform validate"
+    - "make compliance-check"
+workflow_customization:
+  auto_proceed_default: false
+  parallel_pipelines: 1
+```
+
+### Onboarding New Repositories
+
+1. **Quick Start (5 minutes):**
+   ```bash
+   # Copy workflow template
+   cp templates/repo-workflow-template.yml .github/workflows/development-pipeline.yml
+   
+   # Create configuration
+   cp configs/default.yml .github/development-pipeline-config.yml
+   
+   # Test pipeline
+   # Comment on issue: @claude run development pipeline
+   ```
+
+2. **Configuration Validation:**
+   ```bash
+   # Download validation script
+   curl -O https://raw.githubusercontent.com/atriumn/atriumn-shared-workflows/main/scripts/validate-config.py
+   
+   # Validate and get recommendations
+   python validate-config.py .github/development-pipeline-config.yml --report
+   ```
+
+3. **Testing Setup:**
+   ```bash
+   # Test with shared workflows
+   gh workflow run multi-repo-test.yml -f test_repos="your-repo-name" -f test_scenarios="basic-validation"
+   ```
+
+### Advanced Configuration
+
+#### Custom Validation Rules
+```yaml
+validation:
+  custom_rules:
+    - name: "Database Migration Check"
+      pattern: "migration|schema|database"
+      required_sections: ["Database Impact", "Rollback Plan"]
+    - name: "API Breaking Change Check"
+      pattern: "breaking.*change|api.*version"
+      additional_reviewers: ["@api-team-lead"]
+```
+
+#### Integration Settings
+```yaml
+integration_settings:
+  linear_workspace: "ACME-123"
+  slack_webhook: "https://hooks.slack.com/..."
+  deployment_environments: ["staging", "production"]
+  webhooks:
+    pipeline_start: "https://api.company.com/webhooks/pipeline-start"
+    phase_complete: "https://api.company.com/webhooks/phase-complete"
+```
+
+#### Branch Strategy
+```yaml
+branches:
+  prefix: "feature/"
+  naming: "issue-{number}-{title-slug}"
+  cleanup_merged: true
+  protection_rules:
+    require_pr_reviews: true
+    required_reviewers: 2
+```
+
+### Migration and Adoption
+
+#### From Existing Systems
+1. **Document current workflow steps**
+2. **Map steps to pipeline phases** (research → planning → implementation → PR)
+3. **Configure validation rules** to match current quality gates
+4. **Test with non-critical changes** first
+
+#### Team Adoption Strategy
+- **Start with volunteer early adopters**
+- **Provide training** on pipeline commands and workflow
+- **Monitor pipeline usage** and iterate based on feedback
+- **Create team-specific documentation** and examples
+
+### Phase 4 Documentation
+
+For complete repository onboarding guide, see: [`docs/repository-onboarding.md`](docs/repository-onboarding.md)
 
 ## Dependencies
 
