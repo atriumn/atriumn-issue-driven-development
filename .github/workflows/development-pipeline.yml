@@ -49,7 +49,7 @@ jobs:
         run: |
           echo "🔍 DEBUG: Setting up pipeline for issue #${{ inputs.issue_number }}"
           echo "🔍 DEBUG: Repository name input: '${{ inputs.repo_name }}'"
-          echo "🔍 DEBUG: Full repository path: 'atriumn/${{ inputs.repo_name }}'"
+          echo "🔍 DEBUG: Full repository path: '${{ inputs.repo_name }}'"
           echo "🔍 DEBUG: Issue number: '${{ inputs.issue_number }}'"
           echo "🔍 DEBUG: GitHub context repository: '${{ github.repository }}'"
           
@@ -74,7 +74,7 @@ jobs:
           echo "pipeline_id=$PIPELINE_ID" >> $GITHUB_OUTPUT
           
           # Get issue title from the target repository
-          echo "🔍 DEBUG: About to run: gh issue view ${{ inputs.issue_number }} --repo atriumn/${{ inputs.repo_name }} --json title --jq .title"
+          echo "🔍 DEBUG: About to run: gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title"
           echo "🔍 DEBUG: Available repos for authenticated user:"
           gh repo list atriumn --limit 10
           
