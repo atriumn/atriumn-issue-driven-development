@@ -402,7 +402,7 @@ jobs:
   # Triggered by: Claude completing research
   validate-research:
     if: contains(inputs.trigger_comment || '', '✅ ATRIUMN-RESEARCH-DONE')
-    needs: [load-and-validate-config, start-pipeline]
+    needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
       - name: Checkout shared workflows
