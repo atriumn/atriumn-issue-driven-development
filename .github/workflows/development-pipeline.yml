@@ -417,6 +417,7 @@ jobs:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
           fetch-depth: 0
+          path: target-repo
           
       - name: Create pipeline branch name
         id: branch
@@ -461,7 +462,8 @@ jobs:
           PIPELINE_BRANCH="${{ steps.branch.outputs.name }}"
           CLAUDE_BRANCH="${{ steps.claude_branch.outputs.name }}"
           
-          # Configure git user for merge operations
+          # Configure git user for merge operations (work in target-repo directory)
+          cd target-repo
           git config user.name "Pipeline Bot"
           git config user.email "pipeline@atriumn.com"
           
@@ -497,6 +499,7 @@ jobs:
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
           
           # Find research document (now in our pipeline branch after merge)
+          cd target-repo
           RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
           
           if [ -z "$RESEARCH_DOC" ]; then
@@ -514,15 +517,15 @@ jobs:
           echo "=== DEBUG: Directory contents ==="
           ls -la
           echo "=== DEBUG: Looking for shared-workflows ==="
-          find . -name "shared-workflows" -type d
+          find .. -name "shared-workflows" -type d
           echo "=== DEBUG: Looking for validation script ==="
-          find . -name "validate-research.sh" -type f
+          find .. -name "validate-research.sh" -type f
           echo "=== DEBUG: Check if script exists at expected path ==="
-          ls -la ./shared-workflows/scripts/ || echo "shared-workflows/scripts/ not found"
+          ls -la ../shared-workflows/scripts/ || echo "../shared-workflows/scripts/ not found"
           
-          # Run validation script with config JSON
+          # Run validation script with config JSON (from target-repo, go up to parent, then to shared-workflows)
           CONFIG_JSON='${{ needs.load-and-validate-config.outputs.config }}'
-          SCRIPT_PATH="./shared-workflows/scripts/validate-research.sh"
+          SCRIPT_PATH="../shared-workflows/scripts/validate-research.sh"
           echo "=== DEBUG: Trying to run script at: $SCRIPT_PATH ==="
           if [ -f "$SCRIPT_PATH" ]; then
             echo "Script found, executing..."
@@ -544,6 +547,7 @@ jobs:
       - name: Update decision record with research results
         if: steps.validate.outputs.validation_passed == 'true'
         run: |
+          cd target-repo
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
           DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
           
@@ -591,6 +595,7 @@ jobs:
         id: mode
         run: |
           # Extract pipeline mode from decision record
+          cd target-repo
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
           DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
           
