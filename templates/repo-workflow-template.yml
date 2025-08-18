@@ -1,210 +1,77 @@
 # Copy this to your repo: .github/workflows/development-pipeline.yml
-name: Development Pipeline Integration
+name: Development Pipeline
 
 on:
   issue_comment:
     types: [created]
-  pull_request:
-    types: [opened, closed]
 
 jobs:
-  # Phase 1: Validation Scripts Integration
-  validate-on-comment:
-    if: github.event_name == 'issue_comment'
+  # Only trigger on pipeline-related comments in issues
+  check-trigger:
+    if: |
+      github.event.issue &&
+      (contains(github.event.comment.body, '@atriumn-pipeline start') ||
+       contains(github.event.comment.body, '✅ Research Phase Complete') ||
+       contains(github.event.comment.body, 'approve research') ||
+       contains(github.event.comment.body, '✅ Planning Phase Complete') ||
+       contains(github.event.comment.body, 'approve plan') ||
+       contains(github.event.comment.body, '✅ Implementation Phase Complete') ||
+       contains(github.event.comment.body, 'approve implementation'))
     runs-on: ubuntu-latest
+    outputs:
+      should_trigger: ${{ steps.check.outputs.should_trigger }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: Checkout shared workflows
-        uses: actions/checkout@v4
-        with:
-          repository: atriumn/atriumn-shared-workflows
-          path: .github/shared-workflows
-          
-      - name: Install dependencies
+      - name: Check if should trigger pipeline
+        id: check
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          sudo apt-get update && sudo apt-get install -y gh
-          
-      - name: Parse comment for validation triggers
-        id: parse
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          COMMENT_BODY="${{ github.event.comment.body }}"
-          ISSUE_NUMBER="${{ github.event.issue.number }}"
-          
-          echo "comment_body=$COMMENT_BODY" >> $GITHUB_OUTPUT
-          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
-          
-          # Check for validation triggers
-          if echo "$COMMENT_BODY" | grep -q "✅ Research Phase Complete"; then
-            echo "trigger=validate-research" >> $GITHUB_OUTPUT
-          elif echo "$COMMENT_BODY" | grep -q "✅ Planning Phase Complete"; then
-            echo "trigger=validate-plan" >> $GITHUB_OUTPUT
-          elif echo "$COMMENT_BODY" | grep -q "✅ Implementation Phase Complete"; then
-            echo "trigger=validate-implementation" >> $GITHUB_OUTPUT
-          elif echo "$COMMENT_BODY" | grep -q "@claude run development pipeline"; then
-            echo "trigger=start-pipeline" >> $GITHUB_OUTPUT
-          else
-            echo "trigger=none" >> $GITHUB_OUTPUT
-          fi
-          
-      - name: Start development pipeline
-        if: steps.parse.outputs.trigger == 'start-pipeline'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🚀 Development pipeline trigger detected"
-          
-          # Create branch label for tracking
-          ISSUE_NUMBER="${{ steps.parse.outputs.issue_number }}"
-          ISSUE_TITLE=$(gh issue view $ISSUE_NUMBER --json title --jq '.title')
-          TITLE_SLUG=$(echo "$ISSUE_TITLE" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
-          BRANCH_NAME="feature/issue-$ISSUE_NUMBER-$TITLE_SLUG"
-          
-          # Create branch if it doesn't exist
-          if ! git rev-parse --verify "origin/$BRANCH_NAME" >/dev/null 2>&1; then
-            git checkout -b "$BRANCH_NAME"
-            git push origin "$BRANCH_NAME"
-            echo "✅ Created branch: $BRANCH_NAME"
-          fi
-          
-          # Add branch label
-          gh label create "branch:$BRANCH_NAME" --color "0366d6" --description "Pipeline branch" || true
-          gh issue edit $ISSUE_NUMBER --add-label "branch:$BRANCH_NAME"
-          
-          gh issue comment $ISSUE_NUMBER --body "
-          🚀 **Development Pipeline Started**
-          
-          **Branch**: \`$BRANCH_NAME\` (created from \`main\`)
-          **Next Step**: Please begin research following the methodology
-          
-          **Research Requirements:**
-          - Create research document in \`thoughts/shared/research/\`
-          - Use YAML frontmatter with metadata
-          - Include code references with file:line format
-          - Comment \`✅ Research Phase Complete\` when done
-          "
-          
-      - name: Validate research phase
-        if: steps.parse.outputs.trigger == 'validate-research'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🔍 Validating research phase..."
-          
-          ISSUE_NUMBER="${{ steps.parse.outputs.issue_number }}"
-          
-          # Find research document
-          RESEARCH_DOC=$(find thoughts/shared/research -name "*issue-$ISSUE_NUMBER*" -type f | head -1)
-          
-          if [ -z "$RESEARCH_DOC" ]; then
-            gh issue comment $ISSUE_NUMBER --body "❌ **Research Validation Failed**: No research document found for issue #$ISSUE_NUMBER"
-            exit 1
-          fi
-          
-          # Run validation
-          if ./.github/shared-workflows/scripts/validate-research.sh "$RESEARCH_DOC"; then
-            gh issue comment $ISSUE_NUMBER --body "
-            ✅ **Research Validation Passed**
-            
-            **Document**: \`$RESEARCH_DOC\`
-            **Next Step**: Create implementation plan
-            - Comment \`✅ Planning Phase Complete\` when done
-            "
-          else
-            gh issue comment $ISSUE_NUMBER --body "❌ **Research Validation Failed**: Please review document structure and content"
-            exit 1
-          fi
-          
-      - name: Validate planning phase
-        if: steps.parse.outputs.trigger == 'validate-plan'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "📋 Validating planning phase..."
-          
-          ISSUE_NUMBER="${{ steps.parse.outputs.issue_number }}"
-          
-          # Find plan document
-          PLAN_DOC=$(find thoughts/shared/plans -name "*issue-$ISSUE_NUMBER*" -type f | head -1)
-          
-          if [ -z "$PLAN_DOC" ]; then
-            gh issue comment $ISSUE_NUMBER --body "❌ **Planning Validation Failed**: No plan document found for issue #$ISSUE_NUMBER"
-            exit 1
-          fi
-          
-          # Run validation
-          if ./.github/shared-workflows/scripts/validate-plan.sh "$PLAN_DOC"; then
-            gh issue comment $ISSUE_NUMBER --body "
-            ✅ **Planning Validation Passed**
-            
-            **Document**: \`$PLAN_DOC\`
-            **Next Step**: Implement the plan
-            - Comment \`✅ Implementation Phase Complete\` when done
-            "
-          else
-            gh issue comment $ISSUE_NUMBER --body "❌ **Planning Validation Failed**: Please review plan structure and success criteria"
-            exit 1
-          fi
-          
-      - name: Validate implementation phase
-        if: steps.parse.outputs.trigger == 'validate-implementation'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "⚙️ Validating implementation phase..."
-          
-          ISSUE_NUMBER="${{ steps.parse.outputs.issue_number }}"
-          
-          # Get branch name from labels
-          BRANCH_NAME=$(gh issue view $ISSUE_NUMBER --json labels --jq '.labels[] | select(.name | startswith("branch:")) | .name | sub("branch:"; "")')
-          
-          if [ -z "$BRANCH_NAME" ]; then
-            gh issue comment $ISSUE_NUMBER --body "❌ **Implementation Validation Failed**: No pipeline branch found"
-            exit 1
-          fi
-          
-          # Run validation
-          if ./.github/shared-workflows/scripts/validate-implementation.sh "$BRANCH_NAME"; then
-            gh issue comment $ISSUE_NUMBER --body "
-            ✅ **Implementation Validation Passed**
-            
-            **Branch**: \`$BRANCH_NAME\`
-            **Next Step**: Create pull request for review
-            "
-          else
-            gh issue comment $ISSUE_NUMBER --body "❌ **Implementation Validation Failed**: Please review implementation and fix issues"
-            exit 1
-          fi
-          
-  # Validate PRs when opened
-  validate-pr:
-    if: github.event_name == 'pull_request' && github.event.action == 'opened'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout shared workflows
-        uses: actions/checkout@v4
-        with:
-          repository: atriumn/atriumn-shared-workflows
-          path: .github/shared-workflows
-          
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y gh
-          
-      - name: Validate PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          
-          if ./.github/shared-workflows/scripts/validate-pr.sh "$PR_NUMBER"; then
-            gh pr comment $PR_NUMBER --body "✅ **PR Validation Passed** - Ready for review"
-          else
-            gh pr comment $PR_NUMBER --body "❌ **PR Validation Failed** - Please review requirements"
-            exit 1
-          fi
+          echo "should_trigger=true" >> $GITHUB_OUTPUT
+          echo "Triggering shared development pipeline"
+
+  development-pipeline:
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_trigger == 'true'
+    uses: atriumn/atriumn-shared-workflows/.github/workflows/development-pipeline.yml@main
+    with:
+      repo_name: ${{ github.repository }}
+      issue_number: ${{ github.event.issue.number }}
+    secrets:
+      REPO_TOKEN: ${{ secrets.PIPELINE_TOKEN }}
+
+# Configuration Instructions:
+# 
+# 1. Copy this file to your repository at: .github/workflows/development-pipeline.yml
+# 
+# 2. Update the repository name if different from github.repository
+# 
+# 3. Create a repository secret named PIPELINE_TOKEN:
+#    - Go to Settings > Secrets and variables > Actions
+#    - Create new repository secret: PIPELINE_TOKEN
+#    - Value: Your GitHub Personal Access Token with repo permissions
+# 
+# 4. Optional: Create repo-specific config at .github/development-pipeline-config.yml:
+#    repo_name: "your-repo-name"
+#    base_branch: "main"  # or "develop", "master"
+#    thoughts_directory: "thoughts/"  # or "docs/", "documentation/"
+#    
+#    validation:
+#      research_min_refs: 3
+#      implementation_test_commands:
+#        - "npm test"
+#        - "npm run lint"
+#        - "npm run typecheck"
+#    
+#    team:
+#      default_reviewers: ["@your-username"]
+#    
+#    notifications:
+#      slack_channel: "#dev-team"
+# 
+# 5. Test the pipeline:
+#    - Create an issue in your repository
+#    - Comment: "@atriumn-pipeline start"
+#    - The pipeline will create a branch and guide Claude through the process
+# 
+# 6. Pipeline modes:
+#    - Human validation (default): "@atriumn-pipeline start"
+#    - Fully automated: "@atriumn-pipeline start\nHuman validation: false"
+#    - Custom base branch: "@atriumn-pipeline start\nBase branch: develop"

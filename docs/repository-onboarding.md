@@ -17,7 +17,7 @@ on:
 jobs:
   check-trigger:
     if: |
-      contains(github.event.comment.body, '@claude run development pipeline') ||
+      contains(github.event.comment.body, '@atriumn-pipeline start') ||
       contains(github.event.comment.body, '✅ Research Phase Complete') ||
       contains(github.event.comment.body, 'approve research') ||
       contains(github.event.comment.body, '✅ Planning Phase Complete') ||
@@ -35,7 +35,7 @@ jobs:
       repo_name: ${{ github.repository }}
       issue_number: ${{ github.event.issue.number }}
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO_TOKEN: ${{ secrets.PIPELINE_TOKEN }}
 ```
 
 ### 2. Add Repository Configuration
@@ -62,7 +62,7 @@ notifications:
 
 ### 3. Test the Pipeline
 1. Create a test issue
-2. Comment: `@claude run development pipeline`
+2. Comment: `@atriumn-pipeline start`
 3. Verify the pipeline starts correctly
 
 ## Detailed Configuration
@@ -210,7 +210,7 @@ gh workflow run multi-repo-test.yml \
 
 ### 3. Full Pipeline Test
 1. Create test issue: "Test: Pipeline onboarding"
-2. Comment: `@claude run development pipeline`
+2. Comment: `@atriumn-pipeline start`
 3. Monitor progress and validate each phase
 4. Clean up test artifacts
 
