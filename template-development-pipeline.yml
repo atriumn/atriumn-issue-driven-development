@@ -1,0 +1,194 @@
+# Template Development Pipeline Workflow
+# 
+# Copy this file to your repository at:
+# .github/workflows/development-pipeline.yml
+#
+# Then customize the following:
+# 1. Update repo_name in the workflow call (line ~50)
+# 2. Ensure you have PIPELINE_TOKEN secret configured
+# 3. Adjust directory structure if needed (e.g., thoughts/shared/decisions)
+
+name: Development Pipeline
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number'
+        required: true
+        type: string
+      branch_name:
+        description: 'Branch name'
+        required: false
+        type: string
+      pipeline_id:
+        description: 'Pipeline ID'
+        required: false
+        type: string
+      human_validation:
+        description: 'Enable human validation'
+        required: false
+        type: boolean
+        default: true
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  check-trigger:
+    if: |
+      contains(github.event.comment.body, '@claude run development pipeline') ||
+      contains(github.event.comment.body, 'Research Phase Complete') ||
+      contains(github.event.comment.body, 'approve research') ||
+      contains(github.event.comment.body, 'Planning Phase Complete') ||
+      contains(github.event.comment.body, 'approve plan') ||
+      contains(github.event.comment.body, 'Implementation Phase Complete') ||
+      contains(github.event.comment.body, 'approve implementation') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Triggering development pipeline"
+
+  create-branch:
+    needs: check-trigger
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: ${{ steps.setup.outputs.branch_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PIPELINE_TOKEN }}
+          fetch-depth: 0
+          
+      - name: Create feature branch
+        id: setup
+        run: |
+          # Extract issue number from workflow input or comment
+          if [ -n "${{ inputs.issue_number }}" ]; then
+            ISSUE_NUMBER="${{ inputs.issue_number }}"
+          else
+            # Extract from comment trigger (you may need to adjust this regex)
+            ISSUE_NUMBER=$(echo "${{ github.event.issue.number }}")
+          fi
+          
+          # Generate branch name if not provided
+          if [ -z "${{ inputs.branch_name }}" ]; then
+            BRANCH_NAME="feature/issue-${ISSUE_NUMBER}-pipeline"
+          else
+            BRANCH_NAME="${{ inputs.branch_name }}"
+          fi
+          
+          echo "Creating branch: $BRANCH_NAME"
+          
+          # Check if branch already exists
+          if git show-ref --verify --quiet refs/remotes/origin/$BRANCH_NAME; then
+            echo "Branch already exists, switching to it"
+            git checkout $BRANCH_NAME
+          else
+            echo "Creating new branch"
+            git checkout -b $BRANCH_NAME
+            git push -u origin $BRANCH_NAME
+          fi
+          
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "✅ Branch ready: $BRANCH_NAME"
+
+  run-shared-pipeline:
+    needs: [check-trigger, create-branch]
+    if: success()
+    uses: atriumn/atriumn-shared-workflows/.github/workflows/development-pipeline.yml@main
+    with:
+      # CUSTOMIZE THIS: Update to your repository name
+      repo_name: "YOUR_ORG/YOUR_REPO"
+      issue_number: ${{ inputs.issue_number || github.event.issue.number }}
+      branch_name: ${{ needs.create-branch.outputs.branch_name }}
+      pipeline_id: ${{ inputs.pipeline_id || format('pipeline-{0}-{1}', github.run_id, inputs.issue_number || github.event.issue.number) }}
+      human_validation: ${{ inputs.human_validation || true }}
+      test_mode: ${{ inputs.test_mode || false }}
+    secrets:
+      REPO_TOKEN: ${{ secrets.PIPELINE_TOKEN }}
+
+  process-pipeline-outputs:
+    needs: [create-branch, run-shared-pipeline]
+    if: needs.run-shared-pipeline.outputs.pipeline_status == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PIPELINE_TOKEN }}
+          ref: ${{ needs.create-branch.outputs.branch_name }}
+          fetch-depth: 0
+          
+      - name: Process pipeline outputs
+        run: |
+          echo "🔧 Processing pipeline outputs..."
+          
+          # Create directory for decision records
+          # CUSTOMIZE THIS: Adjust directory structure for your repo
+          mkdir -p thoughts/shared/decisions
+          
+          # Extract issue number for file naming
+          ISSUE_NUMBER="${{ inputs.issue_number || github.event.issue.number }}"
+          
+          # Create decision record file
+          cat > "thoughts/shared/decisions/pipeline-issue-${ISSUE_NUMBER}.md" << 'EOF'
+          ${{ needs.run-shared-pipeline.outputs.decision_record_content }}
+          EOF
+          
+          echo "✅ Decision record created"
+          
+      - name: Commit and push changes
+        run: |
+          # Configure git
+          git config user.name "Pipeline Bot"
+          git config user.email "pipeline@atriumn.com"
+          
+          # Add and commit files
+          ISSUE_NUMBER="${{ inputs.issue_number || github.event.issue.number }}"
+          git add thoughts/shared/decisions/pipeline-issue-${ISSUE_NUMBER}.md
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add pipeline decision record for issue #${ISSUE_NUMBER}
+
+Pipeline ID: ${{ needs.run-shared-pipeline.outputs.pipeline_id }}
+Branch: ${{ needs.run-shared-pipeline.outputs.branch_name }}
+
+Research Summary:
+${{ needs.run-shared-pipeline.outputs.research_summary }}
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+            
+            git push origin ${{ needs.create-branch.outputs.branch_name }}
+            echo "✅ Changes committed and pushed"
+          fi
+
+  pipeline-summary:
+    needs: [create-branch, run-shared-pipeline, process-pipeline-outputs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pipeline summary
+        run: |
+          echo "📊 Development Pipeline Summary"
+          echo "================================"
+          echo "Repository: ${{ github.repository }}"
+          echo "Issue: #${{ inputs.issue_number || github.event.issue.number }}"
+          echo "Branch: ${{ needs.create-branch.outputs.branch_name }}"
+          echo "Pipeline ID: ${{ needs.run-shared-pipeline.outputs.pipeline_id }}"
+          echo "Status: ${{ needs.run-shared-pipeline.outputs.pipeline_status }}"
+          echo ""
+          echo "Research Summary:"
+          echo "${{ needs.run-shared-pipeline.outputs.research_summary }}"
+          echo ""
+          echo "Next Actions:"
+          echo "${{ needs.run-shared-pipeline.outputs.next_actions }}"
