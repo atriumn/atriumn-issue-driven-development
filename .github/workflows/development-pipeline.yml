@@ -424,8 +424,8 @@ jobs:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           # Extract branch name from issue labels
-          # Get branch name from pipeline label description
-          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description | sub("Pipeline: "; "")')
+          # Get branch name from pipeline label description  
+          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description' | sed 's/^Pipeline: //')
           
           if [ -z "$BRANCH_NAME" ]; then
             echo "❌ No pipeline branch found in issue labels"
@@ -675,7 +675,7 @@ jobs:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           # Get branch name from pipeline label description
-          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description | sub("Pipeline: "; "")')
+          BRANCH_NAME=$(gh issue view ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --json labels --jq -r '.labels[] | select(.name | startswith("pipeline-issue-")) | .description' | sed 's/^Pipeline: //')
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
       - name: Record approval and trigger planning
