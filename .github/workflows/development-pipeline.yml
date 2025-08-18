@@ -435,7 +435,16 @@ jobs:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           # Look for Claude's branch pattern: claude/issue-XX-*
-          CLAUDE_BRANCH=$(gh api "/repos/${{ inputs.repo_name }}/branches" --jq -r '.[] | select(.name | startswith("claude/issue-${{ github.event.issue.number }}-")) | .name' | head -1)
+          echo "Looking for Claude branch with pattern: claude/issue-${{ github.event.issue.number }}-"
+          
+          # Get all branches and filter with grep
+          echo "Getting all branches..."
+          gh api "/repos/${{ inputs.repo_name }}/branches" --template '{{range .}}{{.name}}{{"\n"}}{{end}}' > /tmp/branches.txt
+          echo "All branches:"
+          cat /tmp/branches.txt
+          echo "Searching for Claude branch..."
+          CLAUDE_BRANCH=$(grep "^claude/issue-${{ github.event.issue.number }}-" /tmp/branches.txt | head -1)
+          echo "Found: '$CLAUDE_BRANCH'"
           
           if [ -z "$CLAUDE_BRANCH" ]; then
             echo "❌ No Claude research branch found for issue #${{ github.event.issue.number }}"
