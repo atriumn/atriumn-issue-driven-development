@@ -105,14 +105,22 @@ validate_yaml_frontmatter() {
         exit 1
     fi
     
-    # Check required frontmatter fields
-    local required_fields=("date" "researcher" "topic" "status")
+    # Check required frontmatter fields (flexible to support different formats)
+    local required_fields=("date" "researcher")
+    local optional_fields=("topic" "status" "issue_title" "research_type")
+    
     for field in "${required_fields[@]}"; do
         if ! grep -q "^$field:" "$RESEARCH_DOC"; then
             echo "❌ Missing required frontmatter field: $field"
             exit 1
         fi
     done
+    
+    # Check that at least one topic-like field exists
+    if ! grep -q "^topic:\|^issue_title:\|^research_type:" "$RESEARCH_DOC"; then
+        echo "❌ Missing topic information (need one of: topic, issue_title, research_type)"
+        exit 1
+    fi
     echo "✅ YAML frontmatter valid"
 }
 
