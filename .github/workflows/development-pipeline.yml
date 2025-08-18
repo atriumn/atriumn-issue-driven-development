@@ -320,6 +320,9 @@ jobs:
           # Create decision record directory if it doesn't exist
           mkdir -p "$THOUGHTS_DIR/shared/decisions"
           
+          # Clean up any existing research for fresh start
+          rm -f "$THOUGHTS_DIR/shared/research/"*"issue-${{ github.event.issue.number }}"* || true
+          
           # Create initial decision record
           cat > "$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md" << EOF
           # Pipeline Decision Record - Issue #${{ github.event.issue.number }}: $ISSUE_TITLE
@@ -404,7 +407,7 @@ jobs:
           - Historical Context from thoughts/ directory
           
           **IMPORTANT: When finished, post this exact completion signal:**
-          \`🟣 ATRIUMN-RESEARCH-COMPLETE\`
+          🟣 \\`ATRIUMN-RESEARCH-COMPLETE\\` (remove the backslashes)
           
           Please complete the research and commit both documents.
           "
