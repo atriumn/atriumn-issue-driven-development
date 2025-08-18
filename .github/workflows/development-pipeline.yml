@@ -191,13 +191,13 @@ jobs:
           - Check for conflicting CSS rules
           - Validate with screen readers"
           
-          NEXT_ACTIONS="1. Create feature branch
-          2. Audit current accessibility implementation
-          3. Implement ARIA improvements
-          4. Add keyboard navigation support
-          5. Update CSS for better contrast
-          6. Add automated tests
-          7. Manual testing with assistive technologies"
+          NEXT_ACTIONS="- Create feature branch
+          - Audit current accessibility implementation  
+          - Implement ARIA improvements
+          - Add keyboard navigation support
+          - Update CSS for better contrast
+          - Add automated tests
+          - Manual testing with assistive technologies"
           
           echo "complete=true" >> $GITHUB_OUTPUT
           echo "summary<<RESEARCH_EOF" >> $GITHUB_OUTPUT
@@ -243,7 +243,7 @@ jobs:
 
   wait-for-approval:
     needs: [research-phase, validate-research]
-    if: inputs.human_validation == true
+    if: always()
     runs-on: ubuntu-latest
     outputs:
       approval_status: ${{ steps.wait.outputs.status }}
@@ -252,19 +252,25 @@ jobs:
       - name: Wait for human approval
         id: wait
         run: |
-          echo "⏳ Human validation enabled - waiting for approval"
-          echo "Research summary:"
-          echo "${{ needs.research-phase.outputs.research_summary }}"
-          echo ""
-          echo "Next actions:"
-          echo "${{ needs.research-phase.outputs.next_actions }}"
-          echo ""
-          echo "Comment 'approve research' on issue #${{ inputs.issue_number }} to proceed"
-          
-          # In a real implementation, this would wait for the approval comment
-          # For now, we'll simulate approval
-          echo "status=approved" >> $GITHUB_OUTPUT
-          echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
+          if [ "${{ inputs.human_validation }}" = "true" ]; then
+            echo "⏳ Human validation enabled - waiting for approval"
+            echo "Research summary:"
+            echo "${{ needs.research-phase.outputs.research_summary }}"
+            echo ""
+            echo "Next actions:"
+            echo "${{ needs.research-phase.outputs.next_actions }}"
+            echo ""
+            echo "Comment 'approve research' on issue #${{ inputs.issue_number }} to proceed"
+            
+            # In a real implementation, this would wait for the approval comment
+            # For now, we'll simulate approval
+            echo "status=approved" >> $GITHUB_OUTPUT
+            echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
+          else
+            echo "🤖 Human validation disabled - auto-approving"
+            echo "status=approved" >> $GITHUB_OUTPUT
+            echo "plan=${{ needs.research-phase.outputs.next_actions }}" >> $GITHUB_OUTPUT
+          fi
 
   complete-pipeline:
     needs: [setup-pipeline, research-phase, validate-research, wait-for-approval]
@@ -311,7 +317,7 @@ jobs:
               echo "$RESEARCH_SUMMARY"
               echo ""
               echo "## Next Actions"
-              echo "$NEXT_ACTIONS"
+              echo "$NEXT_ACTIONS" | sed 's/^[0-9]\+\./  -/g'
               echo ""
               echo "---"
               echo "*Pipeline managed by atriumn-shared-workflows*"
