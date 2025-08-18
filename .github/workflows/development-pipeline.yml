@@ -291,14 +291,14 @@ jobs:
             echo "status=success" >> $GITHUB_OUTPUT
             
             # Generate decision record content
-            DECISION_RECORD=$(cat << 'DECISION_EOF'
-# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
+            CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            DECISION_RECORD="# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
 
 **Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
 **Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
 **Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
-**Started:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-**Completed:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+**Started:** $CURRENT_TIME
+**Completed:** $CURRENT_TIME
 **Status:** Research Complete - Ready for Implementation
 
 ## Research Summary
@@ -313,7 +313,7 @@ ${{ needs.research-phase.outputs.next_actions }}
 
 ### ✅ Research Phase
 - **Status:** Complete
-- **Completed:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+- **Completed:** $CURRENT_TIME
 
 ### 📋 Planning Phase
 - **Status:** Ready to Start
@@ -326,32 +326,13 @@ ${{ needs.research-phase.outputs.next_actions }}
 - **Status:** Pending Implementation
 
 ---
-*Pipeline managed by atriumn-shared-workflows*
-DECISION_EOF
-)
+*Pipeline managed by atriumn-shared-workflows*"
 
             # Define files that need to be created by the calling workflow
-            FILES_TO_CREATE=$(cat << 'FILES_EOF'
-{
-  "decision_record": {
-    "path": "thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md",
-    "content": "$DECISION_RECORD"
-  }
-}
-FILES_EOF
-)
+            FILES_TO_CREATE="{\"decision_record\":{\"path\":\"thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\",\"content\":\"$DECISION_RECORD\"}}"
             
-            # Define git commands for the calling workflow to execute
-            GIT_COMMANDS=$(cat << 'GIT_EOF'
-[
-  "git config user.name 'Pipeline Bot'",
-  "git config user.email 'pipeline@atriumn.com'",
-  "git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md",
-  "git commit -m 'Add pipeline decision record for issue #${{ inputs.issue_number }}'",
-  "git push origin ${{ needs.setup-pipeline.outputs.branch_name }}"
-]
-GIT_EOF
-)
+            # Define git commands for the calling workflow to execute  
+            GIT_COMMANDS="[\"git config user.name 'Pipeline Bot'\",\"git config user.email 'pipeline@atriumn.com'\",\"git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\",\"git commit -m 'Add pipeline decision record for issue #${{ inputs.issue_number }}'\",\"git push origin ${{ needs.setup-pipeline.outputs.branch_name }}\"]"
             
             echo "decision_record<<DECISION_EOF" >> $GITHUB_OUTPUT
             echo "$DECISION_RECORD" >> $GITHUB_OUTPUT
