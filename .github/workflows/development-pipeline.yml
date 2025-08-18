@@ -516,7 +516,9 @@ jobs:
           
           # Find research document (now in our pipeline branch after merge)
           cd target-repo
-          RESEARCH_DOC=$(find "$THOUGHTS_DIR/shared/research" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
+          # Remove double slashes in path
+          THOUGHTS_PATH="${THOUGHTS_DIR%/}/shared/research"
+          RESEARCH_DOC=$(find "$THOUGHTS_PATH" -name "*issue-${{ github.event.issue.number }}*" -type f | head -1)
           
           if [ -z "$RESEARCH_DOC" ]; then
             echo "validation_passed=false" >> $GITHUB_OUTPUT
@@ -628,6 +630,8 @@ jobs:
         run: |
           RESEARCH_DOC="${{ steps.validate.outputs.research_doc }}"
           BRANCH_NAME="${{ steps.branch.outputs.name }}"
+          THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
+          DECISION_DOC="${THOUGHTS_DIR%/}/shared/decisions/pipeline-issue-${{ github.event.issue.number }}.md"
           
           gh issue comment ${{ github.event.issue.number }} --repo ${{ inputs.repo_name }} --body "
           🔍 **Research Validation Required**
@@ -639,6 +643,7 @@ jobs:
           - ✅ YAML frontmatter complete
           
           **Research Document**: [\`$RESEARCH_DOC\`](https://github.com/${{ inputs.repo_name }}/blob/$BRANCH_NAME/$RESEARCH_DOC)
+          **Decision Record**: [\`$DECISION_DOC\`](https://github.com/${{ inputs.repo_name }}/blob/$BRANCH_NAME/$DECISION_DOC)
           
           **Human Review Needed**: 
           @${{ github.event.issue.user.login }} Please review the research findings:
