@@ -293,22 +293,22 @@ jobs:
             # Generate decision record content
             CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             cat > /tmp/decision_record.md << 'EOF'
-# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
+# Development Pipeline Decision Record - Issue #ISSUE_NUMBER_PLACEHOLDER
 
-**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
-**Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
-**Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
+**Issue:** ISSUE_TITLE_PLACEHOLDER
+**Pipeline ID:** PIPELINE_ID_PLACEHOLDER
+**Branch:** BRANCH_NAME_PLACEHOLDER
 **Started:** CURRENT_TIME_PLACEHOLDER
 **Completed:** CURRENT_TIME_PLACEHOLDER
 **Status:** Research Complete - Ready for Implementation
 
 ## Research Summary
 
-${{ needs.research-phase.outputs.research_summary }}
+RESEARCH_SUMMARY_PLACEHOLDER
 
 ## Next Actions
 
-${{ needs.research-phase.outputs.next_actions }}
+NEXT_ACTIONS_PLACEHOLDER
 
 ## Pipeline Progress
 
@@ -330,6 +330,12 @@ ${{ needs.research-phase.outputs.next_actions }}
 *Pipeline managed by atriumn-shared-workflows*
 EOF
             sed -i "s/CURRENT_TIME_PLACEHOLDER/$CURRENT_TIME/g" /tmp/decision_record.md
+            sed -i "s/ISSUE_NUMBER_PLACEHOLDER/${{ inputs.issue_number }}/g" /tmp/decision_record.md
+            sed -i "s/ISSUE_TITLE_PLACEHOLDER/${{ needs.setup-pipeline.outputs.issue_title }}/g" /tmp/decision_record.md
+            sed -i "s/PIPELINE_ID_PLACEHOLDER/${{ needs.setup-pipeline.outputs.pipeline_id }}/g" /tmp/decision_record.md
+            sed -i "s/BRANCH_NAME_PLACEHOLDER/${{ needs.setup-pipeline.outputs.branch_name }}/g" /tmp/decision_record.md
+            sed -i "s/RESEARCH_SUMMARY_PLACEHOLDER/${{ needs.research-phase.outputs.research_summary }}/g" /tmp/decision_record.md
+            sed -i "s/NEXT_ACTIONS_PLACEHOLDER/${{ needs.research-phase.outputs.next_actions }}/g" /tmp/decision_record.md
             DECISION_RECORD=$(cat /tmp/decision_record.md)
 
             # Define files that need to be created by the calling workflow
