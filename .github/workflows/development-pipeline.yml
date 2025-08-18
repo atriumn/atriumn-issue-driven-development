@@ -234,7 +234,7 @@ jobs:
 
   # Triggered by: "@atriumn start"
   start-pipeline:
-    if: inputs.trigger_comment == '@atriumn start' || github.event.action == 'pipeline-start'
+    if: inputs.trigger_comment == '@atriumn start'
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     outputs:
@@ -417,7 +417,7 @@ jobs:
 
   # Triggered by: Claude completing research
   validate-research:
-    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-RESEARCH-COMPLETE') || github.event.action == 'research-complete'
+    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-RESEARCH-COMPLETE')
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
@@ -812,7 +812,7 @@ jobs:
 
   # Triggered by: Claude completing planning  
   validate-plan:
-    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-PLANNING-COMPLETE') || github.event.action == 'planning-complete'
+    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-PLANNING-COMPLETE')
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
@@ -994,7 +994,7 @@ jobs:
 
   # Triggered by: Claude completing implementation
   validate-implementation:
-    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-IMPLEMENTATION-COMPLETE') || github.event.action == 'implementation-complete'
+    if: contains(inputs.trigger_comment || '', '🟣 ATRIUMN-IMPLEMENTATION-COMPLETE')
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     steps:
