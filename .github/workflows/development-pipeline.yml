@@ -30,7 +30,7 @@ on:
         type: boolean
         default: false
     secrets:
-      GITHUB_TOKEN:
+      REPO_TOKEN:
         description: 'GitHub token with access to target repository'
         required: true
 
@@ -95,7 +95,7 @@ jobs:
           echo "   Pipeline ID: $PIPELINE_ID"
           echo "   Issue: #${{ inputs.issue_number }} - $ISSUE_TITLE"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
 
   create-branch:
     needs: setup-pipeline
@@ -234,7 +234,7 @@ jobs:
           
           **Workflow:** [View Progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
 
   complete-pipeline:
     needs: [setup-pipeline, validate-research]
@@ -259,4 +259,4 @@ jobs:
           
           ${{ inputs.test_mode && 'This was a test run.' || '' }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
