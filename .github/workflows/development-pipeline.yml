@@ -49,6 +49,18 @@ on:
         type: string
 
 jobs:
+  # Debug job to check inputs
+  debug-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug trigger_comment
+        run: |
+          echo "trigger_comment input: '${{ inputs.trigger_comment }}'"
+          echo "trigger_comment length: ${#trigger_comment}"
+          echo "contains start: ${{ contains(inputs.trigger_comment || '', '@atriumn-pipeline start') }}"
+        env:
+          trigger_comment: ${{ inputs.trigger_comment }}
+
   # Enhanced configuration loading job
   load-and-validate-config:
     runs-on: ubuntu-latest
