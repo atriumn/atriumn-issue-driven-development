@@ -475,7 +475,16 @@ jobs:
           echo "🔄 Merging research from $CLAUDE_BRANCH into $PIPELINE_BRANCH"
           
           # Merge Claude's research work (allow unrelated histories since Claude creates fresh branches)
-          git merge "$CLAUDE_BRANCH" --no-ff --allow-unrelated-histories -m "Pipeline: Merge research from Claude ($CLAUDE_BRANCH)"
+          # Use strategy that favors Claude's changes in case of conflicts
+          if git merge "$CLAUDE_BRANCH" --no-ff --allow-unrelated-histories -m "Pipeline: Merge research from Claude ($CLAUDE_BRANCH)"; then
+            echo "✅ Clean merge successful"
+          else
+            echo "⚠️ Merge conflicts detected, resolving by favoring Claude's changes..."
+            # Reset to Claude's branch state for research files, keep pipeline files
+            git checkout "$CLAUDE_BRANCH" -- thoughts/ 2>/dev/null || true
+            git add thoughts/ 2>/dev/null || true
+            git commit -m "Pipeline: Resolve merge conflicts by adopting Claude's research" --no-edit || true
+          fi
           
           # Push the merged result
           git push origin "$PIPELINE_BRANCH"
