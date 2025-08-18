@@ -204,56 +204,56 @@ jobs:
           echo "summary=Research completed for accessibility improvements. Key findings: keyboard navigation, ARIA labels, color contrast needed. Estimated complexity: Medium." >> $GITHUB_OUTPUT
           echo "next_actions=Create feature branch, Audit accessibility, Implement ARIA improvements, Add keyboard navigation, Update CSS contrast, Add automated tests, Manual testing" >> $GITHUB_OUTPUT
           
-          # Create research document
+          # Create research document using echo to avoid YAML parsing issues
           mkdir -p thoughts/shared/research
-          cat > thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md << 'RESEARCH_DOC'
-# Research Document - Issue #${{ inputs.issue_number }}
-
-**Date:** $(date -u +"%Y-%m-%d")
-**Researcher:** Pipeline Bot
-**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
-
-## Research Question
-How should we implement the requested changes for this issue?
-
-## Summary
-Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements. Estimated complexity is Medium.
-
-## Detailed Findings
-
-### Key Requirements
-- Issue requires accessibility improvements
-- Focus areas: keyboard navigation, ARIA labels, color contrast
-- Estimated complexity: Medium
-- Files likely affected: UI components, CSS styles
-
-### Technical Approach
-- Audit current accessibility state
-- Implement WCAG 2.1 AA compliance
-- Add automated accessibility testing
-
-### Dependencies
-- Review existing accessibility testing setup
-- Check for conflicting CSS rules
-- Validate with screen readers
-
-## Code References
-- UI components in `/src/components/`
-- CSS styles in `/src/styles/`
-- Test files in `/src/tests/`
-
-## Architecture Insights
-Current accessibility implementation needs enhancement to meet WCAG standards.
-
-## Next Steps
-- Create feature branch
-- Audit current accessibility implementation
-- Implement ARIA improvements
-- Add keyboard navigation support
-- Update CSS for better contrast
-- Add automated tests
-- Manual testing with assistive technologies
-RESEARCH_DOC
+          {
+            echo "# Research Document - Issue #${{ inputs.issue_number }}"
+            echo ""
+            echo "Date: $(date -u +'%Y-%m-%d')"
+            echo "Researcher: Pipeline Bot"
+            echo "Issue: ${{ needs.setup-pipeline.outputs.issue_title }}"
+            echo ""
+            echo "## Research Question"
+            echo "How should we implement the requested changes for this issue?"
+            echo ""
+            echo "## Summary"
+            echo "Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements. Estimated complexity is Medium."
+            echo ""
+            echo "## Detailed Findings"
+            echo ""
+            echo "### Key Requirements"
+            echo "- Issue requires accessibility improvements"
+            echo "- Focus areas: keyboard navigation, ARIA labels, color contrast"
+            echo "- Estimated complexity: Medium"
+            echo "- Files likely affected: UI components, CSS styles"
+            echo ""
+            echo "### Technical Approach"
+            echo "- Audit current accessibility state"
+            echo "- Implement WCAG 2.1 AA compliance"
+            echo "- Add automated accessibility testing"
+            echo ""
+            echo "### Dependencies"
+            echo "- Review existing accessibility testing setup"
+            echo "- Check for conflicting CSS rules"
+            echo "- Validate with screen readers"
+            echo ""
+            echo "## Code References"
+            echo "- UI components in /src/components/"
+            echo "- CSS styles in /src/styles/"
+            echo "- Test files in /src/tests/"
+            echo ""
+            echo "## Architecture Insights"
+            echo "Current accessibility implementation needs enhancement to meet WCAG standards."
+            echo ""
+            echo "## Next Steps"
+            echo "- Create feature branch"
+            echo "- Audit current accessibility implementation"
+            echo "- Implement ARIA improvements"
+            echo "- Add keyboard navigation support"
+            echo "- Update CSS for better contrast"
+            echo "- Add automated tests"
+            echo "- Manual testing with assistive technologies"
+          } > thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
 
           git add thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
           git commit -m "Add research document for issue #${{ inputs.issue_number }}"
@@ -356,40 +356,38 @@ RESEARCH_DOC
             echo "✅ Pipeline completed successfully"
             echo "status=success" >> $GITHUB_OUTPUT
             
-            # Create decision record file
+            # Create decision record file using echo to avoid YAML parsing issues
             mkdir -p thoughts/shared/decisions
             CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             
-            cat > thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md << 'DECISION_DOC'
-# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
-
-**Issue:** ${{ needs.setup-pipeline.outputs.issue_title }}
-**Pipeline ID:** ${{ needs.setup-pipeline.outputs.pipeline_id }}
-**Branch:** ${{ needs.setup-pipeline.outputs.branch_name }}
-**Started:** $CURRENT_TIME
-**Completed:** $CURRENT_TIME
-**Status:** Research Complete
-
-## Research Summary
-Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements. 
-
-## Next Actions
-- Create feature branch ✅ 
-- Audit current accessibility implementation
-- Implement ARIA improvements
-- Add keyboard navigation support
-- Update CSS for better contrast
-- Add automated tests
-- Manual testing with assistive technologies
-
-## Research Document
-See: thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md
-
----
-*Pipeline managed by atriumn-shared-workflows*
-DECISION_DOC
-
-            sed -i "s/\$CURRENT_TIME/$CURRENT_TIME/g" thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
+            {
+              echo "# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}"
+              echo ""
+              echo "Issue: ${{ needs.setup-pipeline.outputs.issue_title }}"
+              echo "Pipeline ID: ${{ needs.setup-pipeline.outputs.pipeline_id }}"
+              echo "Branch: ${{ needs.setup-pipeline.outputs.branch_name }}"
+              echo "Started: $CURRENT_TIME"
+              echo "Completed: $CURRENT_TIME"
+              echo "Status: Research Complete"
+              echo ""
+              echo "## Research Summary"
+              echo "Research completed for accessibility improvements. Key findings indicate need for keyboard navigation, ARIA labels, and color contrast improvements."
+              echo ""
+              echo "## Next Actions"
+              echo "- Create feature branch ✅"
+              echo "- Audit current accessibility implementation"
+              echo "- Implement ARIA improvements"
+              echo "- Add keyboard navigation support"
+              echo "- Update CSS for better contrast"
+              echo "- Add automated tests"
+              echo "- Manual testing with assistive technologies"
+              echo ""
+              echo "## Research Document"
+              echo "See: thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md"
+              echo ""
+              echo "---"
+              echo "Pipeline managed by atriumn-shared-workflows"
+            } > thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
             
             git add thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md
             git commit -m "Add pipeline decision record for issue #${{ inputs.issue_number }}"
