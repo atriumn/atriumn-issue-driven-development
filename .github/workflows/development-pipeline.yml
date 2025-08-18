@@ -11,6 +11,24 @@ on:
         required: false
         type: string
         description: 'Issue number if called from issue context'
+      branch_name:
+        required: false
+        type: string
+        description: 'Optional branch name override'
+      pipeline_id:
+        required: false
+        type: string
+        description: 'Optional pipeline ID for tracking'
+      human_validation:
+        required: false
+        type: boolean
+        default: true
+        description: 'Enable human validation between phases'
+      test_mode:
+        required: false
+        type: boolean
+        default: false
+        description: 'Run in test mode'
     secrets:
       REPO_TOKEN:
         required: true
