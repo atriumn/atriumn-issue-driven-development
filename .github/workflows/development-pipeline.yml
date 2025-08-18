@@ -291,52 +291,22 @@ jobs:
             echo "status=success" >> $GITHUB_OUTPUT
             
             # Generate decision record content
-            CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            cat > /tmp/decision_record.md << 'EOF'
-# Development Pipeline Decision Record - Issue #ISSUE_NUMBER_PLACEHOLDER
+            DECISION_RECORD="# Development Pipeline Decision Record - Issue #${{ inputs.issue_number }}
 
-**Issue:** ISSUE_TITLE_PLACEHOLDER
-**Pipeline ID:** PIPELINE_ID_PLACEHOLDER
-**Branch:** BRANCH_NAME_PLACEHOLDER
-**Started:** CURRENT_TIME_PLACEHOLDER
-**Completed:** CURRENT_TIME_PLACEHOLDER
-**Status:** Research Complete - Ready for Implementation
+Issue: ${{ needs.setup-pipeline.outputs.issue_title }}
+Pipeline ID: ${{ needs.setup-pipeline.outputs.pipeline_id }}
+Branch: ${{ needs.setup-pipeline.outputs.branch_name }}
+Started: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+Completed: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+Status: Research Complete - Ready for Implementation
 
 ## Research Summary
+${{ needs.research-phase.outputs.research_summary }}
 
-RESEARCH_SUMMARY_PLACEHOLDER
+## Next Actions  
+${{ needs.research-phase.outputs.next_actions }}
 
-## Next Actions
-
-NEXT_ACTIONS_PLACEHOLDER
-
-## Pipeline Progress
-
-### ✅ Research Phase
-- **Status:** Complete
-- **Completed:** CURRENT_TIME_PLACEHOLDER
-
-### 📋 Planning Phase
-- **Status:** Ready to Start
-- **Input:** Research findings validated
-
-### 🚧 Implementation Phase  
-- **Status:** Pending Planning
-
-### 🔄 PR Phase
-- **Status:** Pending Implementation
-
----
-*Pipeline managed by atriumn-shared-workflows*
-EOF
-            sed -i "s/CURRENT_TIME_PLACEHOLDER/$CURRENT_TIME/g" /tmp/decision_record.md
-            sed -i "s/ISSUE_NUMBER_PLACEHOLDER/${{ inputs.issue_number }}/g" /tmp/decision_record.md
-            sed -i "s/ISSUE_TITLE_PLACEHOLDER/${{ needs.setup-pipeline.outputs.issue_title }}/g" /tmp/decision_record.md
-            sed -i "s/PIPELINE_ID_PLACEHOLDER/${{ needs.setup-pipeline.outputs.pipeline_id }}/g" /tmp/decision_record.md
-            sed -i "s/BRANCH_NAME_PLACEHOLDER/${{ needs.setup-pipeline.outputs.branch_name }}/g" /tmp/decision_record.md
-            sed -i "s/RESEARCH_SUMMARY_PLACEHOLDER/${{ needs.research-phase.outputs.research_summary }}/g" /tmp/decision_record.md
-            sed -i "s/NEXT_ACTIONS_PLACEHOLDER/${{ needs.research-phase.outputs.next_actions }}/g" /tmp/decision_record.md
-            DECISION_RECORD=$(cat /tmp/decision_record.md)
+Pipeline managed by atriumn-shared-workflows"
 
             # Define files that need to be created by the calling workflow
             FILES_TO_CREATE="{\"decision_record\":{\"path\":\"thoughts/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\",\"content\":\"$DECISION_RECORD\"}}"
