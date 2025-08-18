@@ -508,8 +508,8 @@ jobs:
           echo "research_doc=$RESEARCH_DOC" >> $GITHUB_OUTPUT
           echo "Found research document: $RESEARCH_DOC"
           
-          # Run validation script
-          if ./shared-workflows/scripts/validate-research.sh "$RESEARCH_DOC"; then
+          # Run validation script (adjust path since we're in target repo directory)
+          if ../shared-workflows/scripts/validate-research.sh "$RESEARCH_DOC"; then
             echo "validation_passed=true" >> $GITHUB_OUTPUT
             echo "✅ Research validation passed"
           else
