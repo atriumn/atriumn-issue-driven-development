@@ -75,6 +75,11 @@ jobs:
           
           # Get issue title from the target repository
           echo "🔍 DEBUG: About to run: gh issue view ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --json title --jq .title"
+          echo "🔍 DEBUG: Testing token permissions:"
+          echo "🔍 DEBUG: Can access repository info?"
+          gh repo view ${{ inputs.repo_name }} --json name,owner || echo "❌ Cannot access repository"
+          echo "🔍 DEBUG: Can list issues in repository?"
+          gh issue list --repo ${{ inputs.repo_name }} --limit 5 || echo "❌ Cannot list issues"
           echo "🔍 DEBUG: Available repos for authenticated user:"
           gh repo list atriumn --limit 10
           
