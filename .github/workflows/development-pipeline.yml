@@ -199,9 +199,9 @@ jobs:
           echo "Thoughts directory: ${{ steps.config.outputs.thoughts_dir }}"
           echo "Branch prefix: ${{ steps.config.outputs.branch_prefix }}"
 
-  # Triggered by: "@claude run development pipeline"
+  # Triggered by: "@atriumn-pipeline start"
   start-pipeline:
-    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude run development pipeline')
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '@atriumn-pipeline start')
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     outputs:
