@@ -225,7 +225,12 @@ jobs:
             bodyParts.push("");
             
             if (current.nextAction) {
-              bodyParts.push(`🚀 **Next Step:** Use \`${current.nextAction}\` to proceed to ${current.next}.`);
+              // Create a clickable link to jump to comment section
+              const commentLink = `https://github.com/${owner}/${repo}/issues/${issue_number}#issuecomment-new`;
+              
+              bodyParts.push(`🚀 **Next Step:** [📝 ${current.nextAction}](${commentLink}) to proceed to ${current.next}.`);
+              bodyParts.push("");
+              bodyParts.push(`> **Quick Copy:** \`${current.nextAction}\``);
             } else {
               bodyParts.push('🎉 **All phases complete!**');
             }
