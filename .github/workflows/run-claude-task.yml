@@ -188,12 +188,12 @@ jobs:
             }
 
             const body = [
-              `⚡ **${current.name} phase complete**`,
+              `<img src="https://atriumn.com/logos/atriumn-logo.png" width="16" height="16" style="vertical-align: middle;"> **${current.name} phase complete**`,
               "",
               summary ? `**Key findings:**\n${summary}` : '',
               "",
               `📄 **Artifact:** [\`${path}\`](${url})`,
-              current.nextAction ? `⚡ **Next:** Use \`${current.nextAction}\` to proceed to ${current.next}.` : '⚡ **All phases complete!**'
+              current.nextAction ? `**Next:** Use \`${current.nextAction}\` to proceed to ${current.next}.` : '**All phases complete!**'
             ].filter(line => line !== '').join("\n");
 
             await github.rest.issues.createComment({ owner, repo, issue_number, body });
