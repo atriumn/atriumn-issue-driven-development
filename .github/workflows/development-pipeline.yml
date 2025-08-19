@@ -401,7 +401,7 @@ jobs:
           
           ---
           
-          @claude Please research the codebase for this issue following our research methodology:
+          Please research the codebase for this issue following our research methodology:
           
           **PIPELINE BRANCH**: \`$BRANCH_NAME\` (feature branch for this issue)
           **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\`
@@ -446,12 +446,12 @@ jobs:
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Pipeline branch: $BRANCH_NAME"
 
-      - name: Checkout develop branch to find Claude's research files
+      - name: Checkout feature branch to find Claude's research files
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
-          ref: develop
+          ref: ${{ steps.research-branch.outputs.name }}
           
       - name: Find and validate research document
         id: validate-research
