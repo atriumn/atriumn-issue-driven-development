@@ -527,16 +527,20 @@ jobs:
         if: steps.validate.outputs.validation_passed == 'true'
         run: |
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
-          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md"
+          ISSUE_NUMBER="${{ inputs.issue_number }}"
+          DECISION_FILE="$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md"
           
           # Update decision record
+          RESEARCH_DOC_PATH="${{ steps.validate.outputs.research_doc }}"
+          FILE_REF_COUNT=$(grep -c '`[^`]*\.[a-z]*:' "$RESEARCH_DOC_PATH")
+          
           cat >> "$DECISION_FILE" << EOF
           
           ### Research Phase (Complete ✅)
           - **Completed**: $(date -Iseconds)
-          - **Document**: ${{ steps.validate.outputs.research_doc }}
+          - **Document**: $RESEARCH_DOC_PATH
           - **Validation**: ✅ Passed automated validation
-          - **File References**: $(grep -c '`[^`]*\.[a-z]*:' "${{ steps.validate.outputs.research_doc }}")
+          - **File References**: $FILE_REF_COUNT
           - **Status**: Ready for planning phase
           
           EOF
