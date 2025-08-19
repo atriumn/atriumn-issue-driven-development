@@ -1206,55 +1206,21 @@ jobs:
           RESEARCH_DOC=$(find target-repo/${THOUGHTS_DIR%/}/shared/research -name "*issue-$ISSUE_NUM*" -type f | head -1)
           DECISION_DOC="${THOUGHTS_DIR%/}/shared/decisions/pipeline-issue-$ISSUE_NUM.md"
           
-          # Create PR with rich context
+          # Create PR using external script to avoid YAML parsing issues
           REPO_NAME="${{ inputs.repo_name }}"
           VALIDATION_RESULTS="${{ steps.validate.outputs.validation_results }}"
           
-          # Create PR body file to avoid YAML heredoc issues
-          cat > pr_body.md << 'PRBODY'
-## Summary
-Automated implementation for issue #${ISSUE_NUM}: ${ISSUE_TITLE}
-
-**Validation Results:**
-${VALIDATION_RESULTS}
-
-## Context Documents
-- **Research**: [View Research Doc](https://github.com/${REPO_NAME}/blob/${BRANCH_NAME}/${RESEARCH_DOC})
-- **Plan**: [View Implementation Plan](https://github.com/${REPO_NAME}/blob/${BRANCH_NAME}/${PLAN_DOC})  
-- **Decision Record**: [View Decision Record](https://github.com/${REPO_NAME}/blob/${BRANCH_NAME}/${DECISION_DOC})
-
-## Test Plan
-- [x] Automated validation passed
-- [x] Implementation follows approved plan
-- [x] All success criteria met
-
-## Review Guidelines
-This PR was generated through the Atriumn Issue-Driven Development pipeline with:
-- Automated research and planning phases
-- Implementation validation
-- Quality checks
-
-**Closes #${ISSUE_NUM}**
-
-🟣 Generated with [Atriumn Issue-Driven Development](https://github.com/atriumn/atriumn-issue-driven-development)
-PRBODY
-          
-          # Substitute variables in PR body
-          sed -i "s/\${ISSUE_NUM}/$ISSUE_NUM/g" pr_body.md
-          sed -i "s/\${ISSUE_TITLE}/$ISSUE_TITLE/g" pr_body.md
-          sed -i "s/\${VALIDATION_RESULTS}/$VALIDATION_RESULTS/g" pr_body.md
-          sed -i "s/\${REPO_NAME}/$REPO_NAME/g" pr_body.md
-          sed -i "s/\${BRANCH_NAME}/$BRANCH_NAME/g" pr_body.md
-          sed -i "s/\${RESEARCH_DOC}/$RESEARCH_DOC/g" pr_body.md
-          sed -i "s/\${PLAN_DOC}/$PLAN_DOC/g" pr_body.md
-          sed -i "s/\${DECISION_DOC}/$DECISION_DOC/g" pr_body.md
-          
-          gh pr create \
-            --repo "$REPO_NAME" \
-            --title "$PR_TITLE" \
-            --head "$BRANCH_NAME" \
-            --base "$BASE_BRANCH" \
-            --body-file pr_body.md
+          chmod +x ../shared-workflows/scripts/create-pr.sh
+          ../shared-workflows/scripts/create-pr.sh \
+            "$ISSUE_NUM" \
+            "$ISSUE_TITLE" \
+            "$BRANCH_NAME" \
+            "$BASE_BRANCH" \
+            "$REPO_NAME" \
+            "$VALIDATION_RESULTS" \
+            "$RESEARCH_DOC" \
+            "$PLAN_DOC" \
+            "$DECISION_DOC"
           
           # Link PR to issue
           PR_NUMBER=$(gh pr view $BRANCH_NAME --repo "$REPO_NAME" --json number --jq -r '.number')
