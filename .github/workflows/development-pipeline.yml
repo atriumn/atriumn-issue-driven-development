@@ -434,22 +434,14 @@ jobs:
     needs: start-pipeline
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout shared workflows
-        uses: actions/checkout@v4
-        with:
-          repository: atriumn/atriumn-issue-driven-development
-          path: shared-workflows
-          
       - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
           ref: ${{ needs.start-pipeline.outputs.branch_name }}
-          path: target-repo
           
       - name: Run Claude Code for research
-        working-directory: target-repo
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -459,7 +451,6 @@ jobs:
           
       - name: Commit Claude's research files
         run: |
-          cd target-repo
           
           # Configure git user
           git config user.name "Pipeline Bot"
