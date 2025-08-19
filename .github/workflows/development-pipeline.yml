@@ -450,7 +450,7 @@ jobs:
           path: target-repo
           
       - name: Run Claude Code for research
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@beta
         with:
           github-token: ${{ secrets.REPO_TOKEN }}
           working-directory: target-repo
