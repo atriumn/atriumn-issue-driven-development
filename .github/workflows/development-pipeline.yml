@@ -225,12 +225,18 @@ jobs:
 
       - name: Report configuration details
         run: |
+          CONFIG_SOURCE="${{ steps.config.outputs.config_source }}"
+          REPO_NAME="${{ inputs.repo_name }}"
+          BASE_BRANCH="${{ steps.config.outputs.base_branch }}"
+          THOUGHTS_DIR="${{ steps.config.outputs.thoughts_dir }}"
+          BRANCH_PREFIX="${{ steps.config.outputs.branch_prefix }}"
+          
           echo "📝 Configuration loaded successfully"
-          echo "Source: ${{ steps.config.outputs.config_source }}"
-          echo "Repository: ${{ inputs.repo_name }}"
-          echo "Base branch: ${{ steps.config.outputs.base_branch }}"
-          echo "Thoughts directory: ${{ steps.config.outputs.thoughts_dir }}"
-          echo "Branch prefix: ${{ steps.config.outputs.branch_prefix }}"
+          echo "Source: $CONFIG_SOURCE"
+          echo "Repository: $REPO_NAME"
+          echo "Base branch: $BASE_BRANCH"
+          echo "Thoughts directory: $THOUGHTS_DIR"
+          echo "Branch prefix: $BRANCH_PREFIX"
 
   # Triggered by: "@atriumn start"
   start-pipeline:
@@ -456,10 +462,11 @@ jobs:
           echo "🔍 Looking for Claude's research branch..."
           
           # Find Claude's branch pattern: claude/issue-XX-YYYYMMDD-HHMM
-          CLAUDE_BRANCH=$(git ls-remote --heads origin | grep "claude/issue-${{ inputs.issue_number }}-" | head -1 | sed 's/.*refs\/heads\///' || true)
+          ISSUE_NUMBER="${{ inputs.issue_number }}"
+          CLAUDE_BRANCH=$(git ls-remote --heads origin | grep "claude/issue-$ISSUE_NUMBER-" | head -1 | sed 's/.*refs\/heads\///' || true)
           
           if [ -z "$CLAUDE_BRANCH" ]; then
-            echo "❌ No Claude research branch found for issue #${{ inputs.issue_number }}"
+            echo "❌ No Claude research branch found for issue #$ISSUE_NUMBER"
             exit 1
           fi
           
@@ -501,7 +508,7 @@ jobs:
           
           if [ -z "$RESEARCH_DOC" ]; then
             echo "validation_passed=false" >> $GITHUB_OUTPUT
-            echo "error=No research document found for issue #${{ inputs.issue_number }}" >> $GITHUB_OUTPUT
+            echo "error=No research document found for issue #$ISSUE_NUMBER" >> $GITHUB_OUTPUT
             echo "❌ No research document found"
             echo "Directory contents:"
             find . -name "*.md" -type f 2>/dev/null || echo "No markdown files found"
@@ -839,7 +846,7 @@ jobs:
           
           if [ -z "$PLAN_DOC" ]; then
             echo "validation_passed=false" >> $GITHUB_OUTPUT
-            echo "error=No plan document found for issue #${{ inputs.issue_number }}" >> $GITHUB_OUTPUT
+            echo "error=No plan document found for issue #$ISSUE_NUMBER" >> $GITHUB_OUTPUT
             echo "❌ No plan document found"
             echo "Directory contents:"
             find . -name "*.md" -type f
