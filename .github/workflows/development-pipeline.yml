@@ -420,11 +420,7 @@ jobs:
           - Architecture Insights
           - Historical Context from thoughts/ directory
           
-          **IMPORTANT: When finished, post this exact completion signal as a separate comment:**
-          
-          🟣 ATRIUMN-RESEARCH-COMPLETE
-          
-          (Copy the purple circle and text exactly as shown above)
+          **IMPORTANT: When finished, post your research completion signal in a separate comment.**
           
           Please complete the research and commit both documents.
           "
