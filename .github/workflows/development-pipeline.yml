@@ -1210,22 +1210,18 @@ jobs:
           REPO_NAME="${{ inputs.repo_name }}"
           VALIDATION_RESULTS="${{ steps.validate.outputs.validation_results }}"
           
-          gh pr create \
-            --repo "$REPO_NAME" \
-            --title "$PR_TITLE" \
-            --head "$BRANCH_NAME" \
-            --base "$BASE_BRANCH" \
-            --body "$(cat <<EOF
+          # Create PR body file to avoid YAML heredoc issues
+          cat > pr_body.md << 'PRBODY'
 ## Summary
-Automated implementation for issue #$ISSUE_NUM: $ISSUE_TITLE
+Automated implementation for issue #${ISSUE_NUM}: ${ISSUE_TITLE}
 
 **Validation Results:**
-$VALIDATION_RESULTS
+${VALIDATION_RESULTS}
 
 ## Context Documents
-- **Research**: [View Research Doc](https://github.com/$REPO_NAME/blob/$BRANCH_NAME/$RESEARCH_DOC)
-- **Plan**: [View Implementation Plan](https://github.com/$REPO_NAME/blob/$BRANCH_NAME/$PLAN_DOC)  
-- **Decision Record**: [View Decision Record](https://github.com/$REPO_NAME/blob/$BRANCH_NAME/$DECISION_DOC)
+- **Research**: [View Research Doc](https://github.com/${REPO_NAME}/blob/${BRANCH_NAME}/${RESEARCH_DOC})
+- **Plan**: [View Implementation Plan](https://github.com/${REPO_NAME}/blob/${BRANCH_NAME}/${PLAN_DOC})  
+- **Decision Record**: [View Decision Record](https://github.com/${REPO_NAME}/blob/${BRANCH_NAME}/${DECISION_DOC})
 
 ## Test Plan
 - [x] Automated validation passed
@@ -1238,24 +1234,41 @@ This PR was generated through the Atriumn Issue-Driven Development pipeline with
 - Implementation validation
 - Quality checks
 
-**Closes #$ISSUE_NUM**
+**Closes #${ISSUE_NUM}**
 
 🟣 Generated with [Atriumn Issue-Driven Development](https://github.com/atriumn/atriumn-issue-driven-development)
-EOF
-)"
+PRBODY
+          
+          # Substitute variables in PR body
+          sed -i "s/\${ISSUE_NUM}/$ISSUE_NUM/g" pr_body.md
+          sed -i "s/\${ISSUE_TITLE}/$ISSUE_TITLE/g" pr_body.md
+          sed -i "s/\${VALIDATION_RESULTS}/$VALIDATION_RESULTS/g" pr_body.md
+          sed -i "s/\${REPO_NAME}/$REPO_NAME/g" pr_body.md
+          sed -i "s/\${BRANCH_NAME}/$BRANCH_NAME/g" pr_body.md
+          sed -i "s/\${RESEARCH_DOC}/$RESEARCH_DOC/g" pr_body.md
+          sed -i "s/\${PLAN_DOC}/$PLAN_DOC/g" pr_body.md
+          sed -i "s/\${DECISION_DOC}/$DECISION_DOC/g" pr_body.md
+          
+          gh pr create \
+            --repo "$REPO_NAME" \
+            --title "$PR_TITLE" \
+            --head "$BRANCH_NAME" \
+            --base "$BASE_BRANCH" \
+            --body-file pr_body.md
           
           # Link PR to issue
-          PR_NUMBER=$(gh pr view $BRANCH_NAME --repo ${{ inputs.repo_name }} --json number --jq -r '.number')
+          PR_NUMBER=$(gh pr view $BRANCH_NAME --repo "$REPO_NAME" --json number --jq -r '.number')
           
           # Update issue with PR link
-          gh issue comment $ISSUE_NUM --repo ${{ inputs.repo_name }} --body "
+          VALIDATION_RESULTS_FINAL="${{ steps.validate.outputs.validation_results }}"
+          gh issue comment $ISSUE_NUM --repo "$REPO_NAME" --body "
           🎉 **Pull Request Created**
           
           **PR**: #$PR_NUMBER - $PR_TITLE
-          **Link**: https://github.com/${{ inputs.repo_name }}/pull/$PR_NUMBER
+          **Link**: https://github.com/$REPO_NAME/pull/$PR_NUMBER
           
           **Validation Results:**
-          ${{ steps.validate.outputs.validation_results }}
+          $VALIDATION_RESULTS_FINAL
           
           **Next Steps:**
           - Review and approve the PR
