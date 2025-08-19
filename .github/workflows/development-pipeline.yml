@@ -1027,12 +1027,19 @@ jobs:
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Pipeline branch: $BRANCH_NAME"
 
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-issue-driven-development
+          path: shared-workflows
+          
       - name: Checkout feature branch with current state
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
           ref: ${{ steps.branch.outputs.name }}
+          path: target-repo
           
       - name: Run Claude Code to capture implementation files
         uses: anthropics/claude-code-action@v1
@@ -1068,7 +1075,6 @@ jobs:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           cd target-repo
-          git checkout "${{ steps.branch.outputs.name }}"
           
           echo "🔍 Running implementation validation..."
           
@@ -1221,8 +1227,8 @@ jobs:
           REPO_NAME="${{ inputs.repo_name }}"
           VALIDATION_RESULTS="${{ steps.validate.outputs.validation_results }}"
           
-          chmod +x ../shared-workflows/scripts/create-pr.sh
-          ../shared-workflows/scripts/create-pr.sh \
+          chmod +x shared-workflows/scripts/create-pr.sh
+          shared-workflows/scripts/create-pr.sh \
             "$ISSUE_NUM" \
             "$ISSUE_TITLE" \
             "$BRANCH_NAME" \
@@ -1289,12 +1295,19 @@ jobs:
           
           🔄 PR creation in progress..."
           
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-issue-driven-development
+          path: shared-workflows
+          
       - name: Checkout target repository  
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
           fetch-depth: 0
+          path: target-repo
           
       - name: Get pipeline branch
         id: branch
@@ -1330,8 +1343,8 @@ jobs:
           REPO_NAME="${{ inputs.repo_name }}"
           APPROVER_LOGIN="${{ github.event.comment.user.login }}"
           
-          chmod +x ../shared-workflows/scripts/create-manual-pr.sh
-          ../shared-workflows/scripts/create-manual-pr.sh \
+          chmod +x shared-workflows/scripts/create-manual-pr.sh
+          shared-workflows/scripts/create-manual-pr.sh \
             "$ISSUE_NUM" \
             "$ISSUE_TITLE" \
             "$BRANCH_NAME" \
