@@ -1,0 +1,25 @@
+name: Test Minimal Pipeline
+
+on:
+  repository_dispatch:
+    types: [pipeline-start]
+
+jobs:
+  test-start:
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'pipeline-start'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test repository dispatch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "✅ Repository dispatch working!"
+          echo "Event: ${{ github.event.action }}"
+          echo "Issue: ${{ github.event.client_payload.issue_number }}"
+          echo "Title: ${{ github.event.client_payload.issue_title }}"
+          echo "User: ${{ github.event.client_payload.issue_user }}"
+          
+          ISSUE_NUM="${{ github.event.client_payload.issue_number }}"
+          ISSUE_TITLE="${{ github.event.client_payload.issue_title }}"
+          
+          echo "Pipeline started successfully for issue #$ISSUE_NUM: $ISSUE_TITLE"
