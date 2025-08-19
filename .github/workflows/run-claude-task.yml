@@ -154,16 +154,46 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const { owner, repo } = context.repo;
             const issue_number = Number("${{ inputs.issue_number }}");
             const path = "${{ steps.resolve.outputs.output_path }}";
+            const taskPackId = "${{ steps.resolve.outputs.pack_id }}";
             const url = `https://github.com/${owner}/${repo}/blob/${{ inputs.feature_ref }}/${path}`;
 
+            // Phase display names and next actions
+            const phaseInfo = {
+              'research': { name: 'Research', next: 'plan', nextAction: '/atriumn-approve-research' },
+              'plan': { name: 'Plan', next: 'implement', nextAction: '/atriumn-approve-plan' },
+              'implement': { name: 'Implementation', next: 'validate', nextAction: '/atriumn-approve-implement' },
+              'validate': { name: 'Validation', next: null, nextAction: null }
+            };
+
+            const current = phaseInfo[taskPackId] || { name: taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1), next: null, nextAction: null };
+            
+            // Try to extract summary from the artifact for richer commentary
+            let summary = '';
+            try {
+              if (fs.existsSync(path)) {
+                const content = fs.readFileSync(path, 'utf8');
+                // Extract summary section if it exists
+                const summaryMatch = content.match(/## Summary\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
+                if (summaryMatch) {
+                  summary = summaryMatch[1].trim().substring(0, 300);
+                  if (summaryMatch[1].trim().length > 300) summary += '...';
+                }
+              }
+            } catch (e) {
+              console.log('Could not read artifact for summary:', e.message);
+            }
+
             const body = [
-              "✅ **Research phase complete**",
+              `✅ **${current.name} phase complete**`,
               "",
-              `- Artifact: [\`${path}\`](${url})`,
-              "- Next: use `/atriumn-approve-research` to proceed to planning."
-            ].join("\n");
+              summary ? `**Key findings:**\n${summary}` : '',
+              "",
+              `📋 **Artifact:** [\`${path}\`](${url})`,
+              current.nextAction ? `🚀 **Next:** Use \`${current.nextAction}\` to proceed to ${current.next}.` : '🎉 **All phases complete!**'
+            ].filter(line => line !== '').join("\n");
 
             await github.rest.issues.createComment({ owner, repo, issue_number, body });
