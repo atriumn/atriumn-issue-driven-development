@@ -322,19 +322,24 @@ jobs:
           mkdir -p "$THOUGHTS_DIR/shared/decisions"
           
           # Clean up any existing research for fresh start
-          rm -f "$THOUGHTS_DIR/shared/research/"*"issue-${{ inputs.issue_number }}"* || true
+          rm -f "$THOUGHTS_DIR/shared/research/"*"issue-$ISSUE_NUMBER"* || true
+          
+          # Set template variables
+          REPO_NAME="${{ inputs.repo_name }}"
+          BASE_BRANCH_FINAL="${{ steps.parse.outputs.base_branch_override || needs.load-and-validate-config.outputs.base_branch }}"
+          HUMAN_VALIDATION="${{ steps.parse.outputs.human_validation }}"
           
           # Create initial decision record
-          cat > "$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md" << EOF
-          # Pipeline Decision Record - Issue #${{ inputs.issue_number }}: $ISSUE_TITLE
+          cat > "$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md" << EOF
+          # Pipeline Decision Record - Issue #$ISSUE_NUMBER: $ISSUE_TITLE
           
           ## Issue Context
-          - **Issue**: #${{ inputs.issue_number }}
+          - **Issue**: #$ISSUE_NUMBER
           - **Title**: $ISSUE_TITLE
           - **Branch**: $BRANCH_NAME
           - **Started**: $(date -Iseconds)
-          - **Repository**: ${{ inputs.repo_name }}
-          - **Base Branch**: ${{ steps.parse.outputs.base_branch_override || needs.load-and-validate-config.outputs.base_branch }}
+          - **Repository**: $REPO_NAME
+          - **Base Branch**: $BASE_BRANCH_FINAL
           
           ## Current Status
           - **Phase**: Research (Starting)
@@ -342,7 +347,7 @@ jobs:
           - **Next Action**: Research codebase for issue requirements
           
           ## Pipeline Configuration
-          - **Human Validation**: ${{ steps.parse.outputs.human_validation }}
+          - **Human Validation**: $HUMAN_VALIDATION
           - **Thoughts Directory**: $THOUGHTS_DIR
           
           ---
@@ -356,8 +361,8 @@ jobs:
           # Commit decision record
           git config user.name "Pipeline Bot"
           git config user.email "pipeline@atriumn.com"
-          git add "$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md"
-          git commit -m "Pipeline: Initialize decision record for issue #${{ inputs.issue_number }}"
+          git add "$THOUGHTS_DIR/shared/decisions/pipeline-issue-$ISSUE_NUMBER.md"
+          git commit -m "Pipeline: Initialize decision record for issue #$ISSUE_NUMBER"
           git push origin "$BRANCH_NAME"
 
       - name: Add branch label to issue
@@ -1200,22 +1205,25 @@ jobs:
           DECISION_DOC="${THOUGHTS_DIR%/}/shared/decisions/pipeline-issue-$ISSUE_NUM.md"
           
           # Create PR with rich context
+          REPO_NAME="${{ inputs.repo_name }}"
+          VALIDATION_RESULTS="${{ steps.validate.outputs.validation_results }}"
+          
           gh pr create \
-            --repo ${{ inputs.repo_name }} \
+            --repo "$REPO_NAME" \
             --title "$PR_TITLE" \
             --head "$BRANCH_NAME" \
             --base "$BASE_BRANCH" \
-            --body "$(cat <<'EOF'
+            --body "$(cat <<EOF
 ## Summary
 Automated implementation for issue #$ISSUE_NUM: $ISSUE_TITLE
 
 **Validation Results:**
-${{ steps.validate.outputs.validation_results }}
+$VALIDATION_RESULTS
 
 ## Context Documents
-- **Research**: [View Research Doc](https://github.com/${{ inputs.repo_name }}/blob/$BRANCH_NAME/$RESEARCH_DOC)
-- **Plan**: [View Implementation Plan](https://github.com/${{ inputs.repo_name }}/blob/$BRANCH_NAME/$PLAN_DOC)  
-- **Decision Record**: [View Decision Record](https://github.com/${{ inputs.repo_name }}/blob/$BRANCH_NAME/$DECISION_DOC)
+- **Research**: [View Research Doc](https://github.com/$REPO_NAME/blob/$BRANCH_NAME/$RESEARCH_DOC)
+- **Plan**: [View Implementation Plan](https://github.com/$REPO_NAME/blob/$BRANCH_NAME/$PLAN_DOC)  
+- **Decision Record**: [View Decision Record](https://github.com/$REPO_NAME/blob/$BRANCH_NAME/$DECISION_DOC)
 
 ## Test Plan
 - [x] Automated validation passed
