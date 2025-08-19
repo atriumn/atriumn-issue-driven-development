@@ -37,6 +37,9 @@ on:
       REPO_TOKEN:
         required: true
         description: 'GitHub token with repository access'
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+        description: 'Claude Code OAuth token for AI integration'
 
   # Direct repository dispatch (more efficient than issue_comment)
   repository_dispatch:
