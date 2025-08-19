@@ -195,14 +195,17 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
   
   console.log(`Processing comment: "${comment}"`);
   
-  // Check for trigger matches (must be at start of line or standalone)
+  // Check for trigger matches (must be on its own line)
   for (const [trigger, eventType] of Object.entries(TRIGGERS)) {
-    // Match trigger at start of line or as standalone comment (trim whitespace)
+    // Match trigger as standalone comment or on its own line
     const commentTrimmed = comment.trim();
-    const triggerAtStart = new RegExp(`^${trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
     const triggerStandalone = commentTrimmed === trigger;
     
-    if (triggerStandalone || triggerAtStart.test(comment)) {
+    // Check if trigger appears on its own line (start of line, trigger, optional whitespace, end of line)
+    const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const triggerOnOwnLine = new RegExp(`^\\s*${escapedTrigger}\\s*$`, 'm');
+    
+    if (triggerStandalone || triggerOnOwnLine.test(comment)) {
       console.log(`Trigger matched: ${trigger} -> ${eventType}`);
       
       try {

@@ -429,10 +429,59 @@ jobs:
           Please complete the research and commit both documents.
           "
 
-  # Triggered by: Claude completing research  
+  # Research phase - runs Claude Code and commits files
+  research-phase:
+    if: (github.event_name == 'repository_dispatch' && github.event.action == 'pipeline-start')
+    needs: start-pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-issue-driven-development
+          path: shared-workflows
+          
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo_name }}
+          token: ${{ secrets.REPO_TOKEN }}
+          ref: ${{ needs.start-pipeline.outputs.branch_name }}
+          path: target-repo
+          
+      - name: Run Claude Code for research
+        uses: anthropics/claude-code-action@v1
+        with:
+          github-token: ${{ secrets.REPO_TOKEN }}
+          working-directory: target-repo
+          
+      - name: Commit Claude's research files
+        run: |
+          cd target-repo
+          
+          # Configure git user
+          git config user.name "Pipeline Bot"
+          git config user.email "pipeline@atriumn.com"
+          
+          echo "🔍 Checking for files Claude created..."
+          
+          # Add all files (including new ones)
+          git add .
+          
+          if git diff --staged --quiet; then
+            echo "ℹ️ No new files created by Claude Code"
+          else
+            echo "📝 Found files created by Claude Code, committing..."
+            git status --porcelain
+            git commit -m "Pipeline: Claude's research for issue #${{ inputs.issue_number || github.event.client_payload.issue_number }}"
+            git push origin "${{ needs.start-pipeline.outputs.branch_name }}"
+            echo "✅ Committed Claude's research files to feature branch"
+          fi
+
+  # Triggered by: research-phase completing
   validate-research:
-    if: (inputs.trigger_comment == '🟣 ATRIUMN-RESEARCH-COMPLETE') || (github.event_name == 'repository_dispatch' && github.event.action == 'research-complete')
-    needs: load-and-validate-config
+    if: always() && needs.research-phase.result == 'success'
+    needs: [load-and-validate-config, research-phase]
     runs-on: ubuntu-latest
     steps:
       - name: Create pipeline branch name
@@ -453,42 +502,6 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           ref: ${{ steps.research-branch.outputs.name }}
           
-      - name: Find and merge Claude's research branch
-        run: |
-          # Configure git user
-          git config user.name "Pipeline Bot"
-          git config user.email "pipeline@atriumn.com"
-          
-          echo "🔍 Looking for Claude's research branch..."
-          
-          # Find Claude's branch pattern: claude/issue-XX-YYYYMMDD-HHMM
-          ISSUE_NUMBER="${{ inputs.issue_number }}"
-          CLAUDE_BRANCH=$(git ls-remote --heads origin | grep "claude/issue-$ISSUE_NUMBER-" | head -1 | sed 's/.*refs\/heads\///' || true)
-          
-          if [ -z "$CLAUDE_BRANCH" ]; then
-            echo "❌ No Claude research branch found for issue #$ISSUE_NUMBER"
-            exit 1
-          fi
-          
-          echo "Found Claude's branch: $CLAUDE_BRANCH"
-          
-          # Fetch and merge Claude's work
-          git fetch origin "$CLAUDE_BRANCH"
-          
-          echo "🔄 Merging research from $CLAUDE_BRANCH into feature branch"
-          if git merge "origin/$CLAUDE_BRANCH" --no-ff --allow-unrelated-histories -m "Pipeline: Merge Claude's research from $CLAUDE_BRANCH"; then
-            echo "✅ Successfully merged Claude's research"
-          else
-            echo "⚠️ Resolving conflicts by taking Claude's changes"
-            git checkout --theirs .
-            git add .
-            git commit --no-edit
-          fi
-          
-          # Push merged result
-          git push origin "${{ steps.research-branch.outputs.name }}"
-          echo "✅ Research merged into feature branch"
-
       - name: Find and validate research document
         id: validate-research
         run: |
