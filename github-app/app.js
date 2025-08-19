@@ -211,11 +211,97 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
     const match = comment.match(pattern);
     
     if (match) {
-      const taskDescription = match[1] || `${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} phase for issue #${issue.number}`;
+      // Use provided description or generate from issue context
+      const taskDescription = match[1] || `${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} phase for: "${issue.title}"
+      
+Context from issue description:
+${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' : '') : 'No additional context provided'}`;
       console.log(`Task pack trigger matched: ${trigger} -> ${taskPackId}`);
       console.log(`Task description: ${taskDescription}`);
       
       try {
+        const featureRef = `feature/issue-${issue.number}`;
+        
+        // Create feature branch from develop if it doesn't exist
+        try {
+          // Check if branch exists
+          await octokit.request('GET /repos/{owner}/{repo}/git/ref/{ref}', {
+            owner: repo.owner.login,
+            repo: repo.name,
+            ref: `heads/${featureRef}`
+          });
+          console.log(`Branch ${featureRef} already exists`);
+        } catch (error) {
+          if (error.status === 404) {
+            // Branch doesn't exist, create it
+            console.log(`Creating branch ${featureRef} from develop`);
+            
+            // Get develop branch SHA
+            const developRef = await octokit.request('GET /repos/{owner}/{repo}/git/ref/{ref}', {
+              owner: repo.owner.login,
+              repo: repo.name,
+              ref: 'heads/develop'
+            });
+            
+            // Create new branch
+            await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
+              owner: repo.owner.login,
+              repo: repo.name,
+              ref: `refs/heads/${featureRef}`,
+              sha: developRef.data.object.sha
+            });
+            
+            console.log(`Successfully created branch ${featureRef}`);
+          } else {
+            throw error;
+          }
+        }
+        
+        // Create or update draft PR for the feature branch
+        try {
+          const prTitle = `Feature: Issue #${issue.number} – multi-phase development`;
+          const prBody = `Tracking PR for Issue #${issue.number}.
+
+## Development Phases:
+- [ ] Research
+- [ ] Plan  
+- [ ] Implement
+- [ ] Validate
+
+**Issue:** ${issue.title}
+**Branch:** \`${featureRef}\`
+
+This PR will be updated automatically as each phase completes.`;
+
+          // Check if PR already exists
+          const existingPRs = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
+            owner: repo.owner.login,
+            repo: repo.name,
+            head: `${repo.owner.login}:${featureRef}`,
+            state: 'open'
+          });
+
+          if (existingPRs.data.length > 0) {
+            console.log(`Draft PR already exists for ${featureRef}: #${existingPRs.data[0].number}`);
+          } else {
+            // Create new draft PR
+            const newPR = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
+              owner: repo.owner.login,
+              repo: repo.name,
+              title: prTitle,
+              head: featureRef,
+              base: 'develop',
+              body: prBody,
+              draft: true
+            });
+            
+            console.log(`Created draft PR #${newPR.data.number} for ${featureRef}`);
+          }
+        } catch (prError) {
+          console.error(`Failed to create/update PR for ${featureRef}:`, prError.message);
+          // Don't fail the entire process if PR creation fails
+        }
+        
         // Dispatch workflow_dispatch to claude.yml (or specific task workflow)
         await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
           owner: repo.owner.login,
@@ -223,7 +309,7 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
           workflow_id: 'claude.yml', // This will call run-claude-task.yml
           ref: 'develop',
           inputs: {
-            feature_ref: `feature/issue-${issue.number}`,
+            feature_ref: featureRef,
             issue_number: String(issue.number),
             task_description: taskDescription
           }
