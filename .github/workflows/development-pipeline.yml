@@ -430,6 +430,12 @@ jobs:
     if: (github.event_name == 'repository_dispatch' && github.event.action == 'pipeline-start')
     needs: start-pipeline
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
     steps:
       - name: Checkout shared workflows
         uses: actions/checkout@v4
