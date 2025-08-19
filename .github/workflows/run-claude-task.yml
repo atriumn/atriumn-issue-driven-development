@@ -204,7 +204,7 @@ jobs:
               "✅ **Research phase complete**",
               "",
               `- Artifact: [\`${path}\`](${url})`,
-              "- Next: use `/approve-research` to proceed to planning."
+              "- Next: use `/atriumn-approve-research` to proceed to planning."
             ].join("\n");
 
             await github.rest.issues.createComment({ owner, repo, issue_number, body });

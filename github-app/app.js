@@ -11,38 +11,28 @@ const app = new App({
   }
 });
 
-// Trigger patterns for Atriumn Issue-Driven Development
-const TRIGGERS = {
-  '@atriumn start': 'pipeline-start',
-  '🟣 ATRIUMN-RESEARCH-COMPLETE': 'research-complete', 
-  '@atriumn approve-research': 'approve-research',
-  '🟣 ATRIUMN-PLANNING-COMPLETE': 'planning-complete',
-  '@atriumn approve-plan': 'approve-plan',
-  '🟣 ATRIUMN-IMPLEMENTATION-COMPLETE': 'implementation-complete'
+// New task pack system triggers
+const TASK_PACK_TRIGGERS = {
+  '/atriumn-research': 'research',
+  '/atriumn-plan': 'plan', 
+  '/atriumn-implement': 'implement',
+  '/atriumn-validate': 'validate'
 };
 
-// Special patterns that allow additional text
-const FLEXIBLE_TRIGGERS = {
-  '@atriumn start': 'pipeline-start'  // Allows "@atriumn start something"
+// Approval triggers (handled by phase-approvals.yml)
+const APPROVAL_TRIGGERS = {
+  '/atriumn-approve-research': 'approve-research',
+  '/atriumn-revise-research': 'revise-research',
+  '/atriumn-approve-plan': 'approve-plan', 
+  '/atriumn-revise-plan': 'revise-plan',
+  '/atriumn-approve-implement': 'approve-implement',
+  '/atriumn-revise-implement': 'revise-implement',
+  '/atriumn-approve-validate': 'approve-validate',
+  '/atriumn-revise-validate': 'revise-validate'
 };
 
-// Workflow template
-const WORKFLOW_TEMPLATE = `name: Development Pipeline
-
-on:
-  repository_dispatch:
-    types: [pipeline-start, research-complete, approve-research, planning-complete, approve-plan, implementation-complete]
-
-jobs:
-  development-pipeline:
-    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
-    with:
-      repo_name: \${{ github.repository }}
-      issue_number: \${{ github.event.client_payload.issue_number }}
-      trigger_comment: \${{ github.event.client_payload.triggered_by }}
-    secrets:
-      REPO_TOKEN: \${{ secrets.PIPELINE_TOKEN }}
-`;
+// GitHub App now dispatches directly to task pack workflows
+// No static workflow template needed - repos use their own claude.yml dispatcher
 
 // Auto-setup workflow when app is installed
 app.webhooks.on('installation.created', async ({ payload }) => {
@@ -207,74 +197,69 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
   
   console.log(`Processing comment from ${commentUser}: "${comment}"`);
   
-  // Check for trigger matches (must be on its own line)
-  for (const [trigger, eventType] of Object.entries(TRIGGERS)) {
-    // Match trigger as standalone comment or on its own line
-    const commentTrimmed = comment.trim();
-    const triggerStandalone = commentTrimmed === trigger;
+  // Get installation octokit instance
+  const installationId = payload.installation?.id;
+  if (!installationId) {
+    console.error('No installation ID found in payload');
+    return;
+  }
+  const octokit = await app.getInstallationOctokit(installationId);
+  
+  // Check for task pack triggers (e.g., "/research description")
+  for (const [trigger, taskPackId] of Object.entries(TASK_PACK_TRIGGERS)) {
+    const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
+    const match = comment.match(pattern);
     
-    // Check if trigger appears on its own line (start of line, trigger, optional whitespace, end of line)
-    const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const triggerOnOwnLine = new RegExp(`^\\s*${escapedTrigger}\\s*$`, 'm');
-    
-    // Check flexible triggers (allow additional text after trigger)
-    let flexibleMatch = false;
-    if (FLEXIBLE_TRIGGERS[trigger]) {
-      const flexiblePattern = new RegExp(`^\\s*${escapedTrigger}(\\s|$)`, 'm');
-      flexibleMatch = flexiblePattern.test(comment);
-    }
-    
-    if (triggerStandalone || triggerOnOwnLine.test(comment) || flexibleMatch) {
-      console.log(`Trigger matched: ${trigger} -> ${eventType}`);
+    if (match) {
+      const taskDescription = match[1] || `${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} phase for issue #${issue.number}`;
+      console.log(`Task pack trigger matched: ${trigger} -> ${taskPackId}`);
+      console.log(`Task description: ${taskDescription}`);
       
       try {
-        // Get installation octokit instance
-        console.log('Installation ID:', payload.installation?.id);
-        const installationId = payload.installation?.id;
-        if (!installationId) {
-          console.error('No installation ID found in payload');
-          return;
-        }
-        const octokit = await app.getInstallationOctokit(installationId);
-        console.log('Octokit instance:', !!octokit, !!octokit?.rest, !!octokit?.repos, typeof octokit?.request);
-        console.log('Dispatching event:', {
+        // Dispatch workflow_dispatch to claude.yml (or specific task workflow)
+        await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
           owner: repo.owner.login,
           repo: repo.name,
-          event_type: eventType,
-          client_payload_keys: Object.keys({
-            issue_number: issue.number,
-            issue_title: issue.title,
-            comment_body: comment,
-            comment_user: payload.comment.user.login,
-            issue_user: issue.user.login,
-            triggered_by: trigger,
-            timestamp: new Date().toISOString()
-          })
-        });
-        
-        // Dispatch repository event
-        await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          event_type: eventType,
-          client_payload: {
-            issue_number: issue.number,
-            issue_title: issue.title,
-            comment_body: comment,
-            comment_user: payload.comment.user.login,
-            issue_user: issue.user.login,
-            triggered_by: trigger,
-            timestamp: new Date().toISOString()
+          workflow_id: 'claude.yml', // This will call run-claude-task.yml
+          ref: 'develop',
+          inputs: {
+            feature_ref: `feature/issue-${issue.number}`,
+            issue_number: String(issue.number),
+            task_description: taskDescription
           }
         });
         
-        console.log(`Successfully dispatched ${eventType} for issue #${issue.number}`);
+        console.log(`Successfully dispatched ${taskPackId} task pack for issue #${issue.number}`);
         
-        // Only trigger once per comment
-        break;
+        // Comment on issue to acknowledge
+        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          issue_number: issue.number,
+          body: `🤖 **${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} task started**\n\nTriggered by: ${trigger}\nBranch: \`feature/issue-${issue.number}\`\n\nWatch progress in [Actions](https://github.com/${repo.owner.login}/${repo.name}/actions)`
+        });
+        
+        return; // Only trigger once per comment
       } catch (error) {
-        console.error(`Failed to dispatch ${eventType}:`, error);
+        console.error(`Failed to dispatch ${taskPackId} task pack:`, error);
+        
+        // Comment on issue about error
+        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          issue_number: issue.number,
+          body: `❌ **Failed to start ${taskPackId} task**\n\nError: ${error.message}\n\nPlease check the GitHub App configuration.`
+        });
       }
+    }
+  }
+  
+  // Check for approval triggers (these go to existing phase-approvals.yml)
+  for (const [trigger] of Object.entries(APPROVAL_TRIGGERS)) {
+    const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
+    if (comment.match(pattern)) {
+      console.log(`Approval trigger matched: ${trigger} (handled by phase-approvals.yml)`);
+      return; // Let phase-approvals.yml handle this
     }
   }
 });
@@ -319,7 +304,8 @@ if (require.main === module) {
   
   server.listen(port, () => {
     console.log(`Atriumn Issue-Driven Development app listening on port ${port}`);
-    console.log('Configured triggers:', Object.keys(TRIGGERS));
+    console.log('Configured task pack triggers:', Object.keys(TASK_PACK_TRIGGERS));
+    console.log('Configured approval triggers:', Object.keys(APPROVAL_TRIGGERS));
     console.log('Test endpoint: POST http://localhost:' + port + '/test-setup');
   });
 }
