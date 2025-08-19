@@ -403,14 +403,10 @@ jobs:
           
           @claude Please research the codebase for this issue following our research methodology:
           
-          **IMPORTANT**: First checkout the feature branch \`$BRANCH_NAME\` before starting research:
-          \`\`\`bash
-          git fetch origin
-          git checkout $BRANCH_NAME
-          \`\`\`
-          
           **PIPELINE BRANCH**: \`$BRANCH_NAME\` (feature branch for this issue)
           **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\`
+          
+          **🚫 GIT-FREE STRATEGY**: You do NOT need to perform any git operations. Simply create and edit files in your current working directory. The pipeline will handle copying your research to the feature branch.
           
           **Research Requirements:**
           - Read any mentioned ticket files completely first
@@ -450,12 +446,12 @@ jobs:
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Pipeline branch: $BRANCH_NAME"
 
-      - name: Checkout feature branch with current state
+      - name: Checkout develop branch to find Claude's research files
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
           token: ${{ secrets.REPO_TOKEN }}
-          ref: ${{ steps.research-branch.outputs.name }}
+          ref: develop
           
       - name: Find and validate research document
         id: validate-research
