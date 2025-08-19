@@ -1,0 +1,210 @@
+name: Run Claude Task
+
+on:
+  workflow_call:
+    inputs:
+      task_pack_id:
+        required: true
+        type: string
+      feature_ref:
+        required: true
+        type: string
+      issue_number:
+        required: true
+        type: string
+      task_description:
+        required: true
+        type: string
+      task_name:
+        required: false
+        type: string
+        default: research
+      runner:
+        required: false
+        type: string
+        default: claude-code
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      GH_TOKEN_FOR_BOT:
+        required: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+
+    steps:
+      - name: Checkout repository (caller repo)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.feature_ref }}
+          fetch-depth: 0
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-shared-workflows
+          path: _shared
+
+      - name: Resolve Task Pack (JSON) + Prompt
+        id: resolve
+        uses: actions/github-script@v7
+        env:
+          TASK_PACK_ID: ${{ inputs.task_pack_id }}
+          FEATURE_REF:  ${{ inputs.feature_ref }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TASK_DESC:    ${{ inputs.task_description }}
+          REPO_FULL:    ${{ github.repository }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const packPath = path.join('_shared', '.atrium-shared', 'taskpacks', `${process.env.TASK_PACK_ID}.json`);
+            const pack = JSON.parse(fs.readFileSync(packPath, 'utf8'));
+
+            function render(str, vars) {
+              return str.replace(/\$\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
+            }
+
+            const vars = {
+              feature_ref: process.env.FEATURE_REF,
+              issue_number: process.env.ISSUE_NUMBER,
+              task_description: process.env.TASK_DESC,
+              repository: process.env.REPO_FULL,
+            };
+
+            const outputPath = render(pack.output_path_template, vars);
+            vars.output_path = outputPath;
+
+            const promptPath = path.join('_shared', pack.prompt_template_path);
+            const rawPrompt = fs.readFileSync(promptPath, 'utf8');
+            const directPrompt = render(rawPrompt, vars);
+
+            core.setOutput('allowed_tools', JSON.stringify(pack.allowed_tools || []));
+            core.setOutput('direct_prompt', directPrompt);
+            core.setOutput('output_path', outputPath);
+            core.setOutput('check_name', pack.check_name || 'Claude Task');
+            core.setOutput('labels', JSON.stringify(pack.labels || []));
+            core.setOutput('pack_id', pack.id);
+            core.setOutput('pack_version', String(pack.version || '1'));
+
+      - name: Ensure output directory exists (filesystem only)
+        run: |
+          mkdir -p "$(dirname '${{ steps.resolve.outputs.output_path }}')"
+
+      - name: Run Claude Code
+        if: ${{ inputs.runner == 'claude-code' }}
+        uses: anthropics/claude-code-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token:            ${{ secrets.GH_TOKEN_FOR_BOT }}
+          mode: agent
+          timeout_minutes: 40
+          max_turns: 40
+          allowed_tools: ${{ steps.resolve.outputs.allowed_tools }}
+          direct_prompt: ${{ steps.resolve.outputs.direct_prompt }}
+
+      - name: Assert output exists and is non-empty
+        run: |
+          test -s "${{ steps.resolve.outputs.output_path }}" \
+            || (echo "Expected output missing or empty: ${{ steps.resolve.outputs.output_path }}" && exit 1)
+
+      - name: Commit & push changes
+        run: |
+          git config user.name  "Pipeline Bot"
+          git config user.email "pipeline@atriumn.com"
+          git add -A
+          git commit -m "taskpack:${{ steps.resolve.outputs.pack_id }} issue #${{ inputs.issue_number }} (${{
+            steps.resolve.outputs.output_path
+          }})" || echo "No changes to commit"
+          git push origin "${{ inputs.feature_ref }}" || true
+
+      - name: Emit meta manifest
+        run: |
+          META="${{ steps.resolve.outputs.output_path }}.meta.json"
+          cat > "$META" <<JSON
+          {
+            "task_pack_id": "${{ steps.resolve.outputs.pack_id }}",
+            "task_pack_version": "${{ steps.resolve.outputs.pack_version }}",
+            "runner": "${{ inputs.runner }}",
+            "output_path": "${{ steps.resolve.outputs.output_path }}",
+            "issue_number": "${{ inputs.issue_number }}",
+            "feature_ref": "${{ inputs.feature_ref }}",
+            "repository": "${{ github.repository }}",
+            "commit_sha": "$(git rev-parse HEAD)",
+            "status": "completed"
+          }
+          JSON
+          git add "$META"
+          git commit -m "meta: $META" || true
+          git push origin "${{ inputs.feature_ref }}" || true
+
+      - name: Ensure Draft PR exists / updated
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const head = "${{ inputs.feature_ref }}";
+            const title = `Feature: Issue #${{ inputs.issue_number }} – multi-phase development`;
+            const body  = `Tracking PR for Issue #${{ inputs.issue_number }}.\n\n## Development Phases:\n- [x] Research\n- [ ] Plan\n- [ ] Implement\n- [ ] Validate\n\nArtifacts:\n- ${{ steps.resolve.outputs.output_path }}`;
+
+            const prs = await github.rest.pulls.list({ owner, repo, head: `${owner}:${head}`, state: 'open' });
+            if (prs.data.length) {
+              await github.rest.pulls.update({
+                owner, repo, pull_number: prs.data[0].number, title, body
+              });
+              core.info(`Updated existing PR #${prs.data[0].number}`);
+            } else {
+              const pr = await github.rest.pulls.create({
+                owner, repo, title, head, base: "develop", draft: true, body
+              });
+              core.info(`Created Draft PR #${pr.data.number}`);
+            }
+
+      - name: Create Check Run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = (await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: "${{ inputs.feature_ref }}"
+            })).data.sha;
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: "${{ steps.resolve.outputs.check_name }}",
+              head_sha: sha,
+              status: "completed",
+              conclusion: "success",
+              output: {
+                title: "${{ steps.resolve.outputs.check_name }} completed",
+                summary: "Artifact: ${{ steps.resolve.outputs.output_path }}"
+              }
+            });
+
+      - name: Comment on issue with artifact link
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = Number("${{ inputs.issue_number }}");
+            const path = "${{ steps.resolve.outputs.output_path }}";
+            const url = `https://github.com/${owner}/${repo}/blob/${process.env.GITHUB_SHA}/${path}`;
+
+            const body = [
+              "✅ **Research phase complete**",
+              "",
+              `- Artifact: [\`${path}\`](${url})`,
+              "- Next: use `/approve-research` to proceed to planning."
+            ].join("\n");
+
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });

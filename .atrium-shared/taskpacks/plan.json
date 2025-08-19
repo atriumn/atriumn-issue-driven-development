@@ -1,0 +1,14 @@
+{
+  "id": "plan",
+  "version": 1,
+  "runner": "claude-code",
+  "allowed_tools": ["Read","Write","Grep","Glob","LS","Edit","MultiEdit","TodoWrite"],
+  "output_path_template": "thoughts/shared/plans/issue-${issue_number}.md",
+  "prompt_template_path": ".atrium-shared/prompts/plan.md",
+  "check_name": "Phase: Plan",
+  "labels": ["phase:plan","bot:claude"],
+  "acceptance": {
+    "must_create": "thoughts/shared/plans/issue-${issue_number}.md",
+    "must_be_non_empty": "thoughts/shared/plans/issue-${issue_number}.md"
+  }
+}

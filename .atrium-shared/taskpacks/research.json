@@ -1,0 +1,14 @@
+{
+  "id": "research",
+  "version": 1,
+  "runner": "claude-code",
+  "allowed_tools": ["Read","Write","Grep","Glob","LS","Edit","MultiEdit","TodoWrite"],
+  "output_path_template": "thoughts/shared/research/issue-${issue_number}.md",
+  "prompt_template_path": ".atrium-shared/prompts/research.md",
+  "check_name": "Phase: Research",
+  "labels": ["phase:research","bot:claude"],
+  "acceptance": {
+    "must_create": "thoughts/shared/research/issue-${issue_number}.md",
+    "must_be_non_empty": "thoughts/shared/research/issue-${issue_number}.md"
+  }
+}
