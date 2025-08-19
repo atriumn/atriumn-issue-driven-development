@@ -427,6 +427,13 @@ jobs:
           
           Please complete the research and commit both documents.
           "
+          
+          # Dispatch Claude Code workflow to execute research on feature branch
+          gh workflow run claude.yml \
+            --repo ${{ inputs.repo_name }} \
+            --field feature_ref="$BRANCH_NAME" \
+            --field issue_number="${{ inputs.issue_number }}" \
+            --field task_description="Research the codebase for this issue following our research methodology. Create research document and update decision record with findings."
 
 
   # Triggered by: Claude posting research completion signal

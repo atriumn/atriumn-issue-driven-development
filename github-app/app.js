@@ -252,45 +252,21 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
           })
         });
         
-        // Special handling for research-complete: dispatch Claude workflow instead of repository event
-        if (eventType === 'research-complete') {
-          // Extract feature branch from the comment (should contain PIPELINE BRANCH: `branch-name`)
-          const branchMatch = comment.match(/PIPELINE BRANCH.*?`([^`]+)`/);
-          const featureBranch = branchMatch ? branchMatch[1] : 'develop';
-          
-          console.log(`Dispatching Claude workflow for feature branch: ${featureBranch}`);
-          
-          // Dispatch workflow_dispatch to Claude Code workflow
-          await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            workflow_id: 'claude.yml',
-            ref: 'develop', // The workflow file is on develop, but it will checkout the feature branch
-            inputs: {
-              feature_ref: featureBranch,
-              issue_number: issue.number.toString(),
-              task_description: 'Research phase for issue-driven development pipeline'
-            }
-          });
-          
-          console.log(`Successfully dispatched Claude workflow for issue #${issue.number} on branch ${featureBranch}`);
-        } else {
-          // Regular repository dispatch for other events
-          await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            event_type: eventType,
-            client_payload: {
-              issue_number: issue.number,
-              issue_title: issue.title,
-              comment_body: comment,
-              comment_user: payload.comment.user.login,
-              issue_user: issue.user.login,
-              triggered_by: trigger,
-              timestamp: new Date().toISOString()
-            }
-          });
-        }
+        // Dispatch repository event
+        await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          event_type: eventType,
+          client_payload: {
+            issue_number: issue.number,
+            issue_title: issue.title,
+            comment_body: comment,
+            comment_user: payload.comment.user.login,
+            issue_user: issue.user.login,
+            triggered_by: trigger,
+            timestamp: new Date().toISOString()
+          }
+        });
         
         console.log(`Successfully dispatched ${eventType} for issue #${issue.number}`);
         
