@@ -401,7 +401,7 @@ jobs:
           
           ---
           
-          Please research the codebase for this issue following our research methodology:
+          @claude Please research the codebase for this issue following our research methodology:
           
           **PIPELINE BRANCH**: \`$BRANCH_NAME\` (feature branch for this issue)
           **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\`
@@ -428,53 +428,11 @@ jobs:
           Please complete the research and commit both documents.
           "
 
-  # Research phase - runs Claude Code and commits files
-  research-phase:
-    if: (github.event_name == 'repository_dispatch' && github.event.action == 'pipeline-start')
-    needs: start-pipeline
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout feature branch
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
-          ref: ${{ needs.start-pipeline.outputs.branch_name }}
-          
-      - name: Run Claude Code for research
-        uses: anthropics/claude-code-action@beta
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.REPO_TOKEN }}
-          additional_permissions: |
-            actions: read
-          
-      - name: Commit Claude's research files
-        run: |
-          
-          # Configure git user
-          git config user.name "Pipeline Bot"
-          git config user.email "pipeline@atriumn.com"
-          
-          echo "🔍 Checking for files Claude created..."
-          
-          # Add all files (including new ones)
-          git add .
-          
-          if git diff --staged --quiet; then
-            echo "ℹ️ No new files created by Claude Code"
-          else
-            echo "📝 Found files created by Claude Code, committing..."
-            git status --porcelain
-            git commit -m "Pipeline: Claude's research for issue #${{ inputs.issue_number || github.event.client_payload.issue_number }}"
-            git push origin "${{ needs.start-pipeline.outputs.branch_name }}"
-            echo "✅ Committed Claude's research files to feature branch"
-          fi
 
-  # Triggered by: research-phase completing
+  # Triggered by: Claude posting research completion signal
   validate-research:
-    if: always() && needs.research-phase.result == 'success'
-    needs: [load-and-validate-config, research-phase]
+    if: (github.event_name == 'repository_dispatch' && github.event.action == 'research-complete')
+    needs: [load-and-validate-config]
     runs-on: ubuntu-latest
     steps:
       - name: Create pipeline branch name
