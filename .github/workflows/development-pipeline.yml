@@ -234,7 +234,7 @@ jobs:
 
   # Triggered by: "@atriumn start"
   start-pipeline:
-    if: github.event_name == 'repository_dispatch' && contains(github.event.action, 'pipeline-start')
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'pipeline-start'
     needs: load-and-validate-config
     runs-on: ubuntu-latest
     outputs:
