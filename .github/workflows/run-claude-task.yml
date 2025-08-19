@@ -173,27 +173,63 @@ jobs:
             
             // Try to extract summary from the artifact for richer commentary
             let summary = '';
+            let codebaseOverview = '';
             try {
               if (fs.existsSync(path)) {
                 const content = fs.readFileSync(path, 'utf8');
+                
                 // Extract summary section if it exists
                 const summaryMatch = content.match(/## Summary\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
                 if (summaryMatch) {
-                  summary = summaryMatch[1].trim().substring(0, 800);
-                  if (summaryMatch[1].trim().length > 800) summary += '...';
+                  const fullSummary = summaryMatch[1].trim();
+                  
+                  // Try to split into codebase overview and key findings
+                  const parts = fullSummary.split(/\*\*Key risks|Key risks/);
+                  if (parts.length > 1) {
+                    codebaseOverview = parts[0].trim();
+                    summary = `**Key risks${parts[1]}`.substring(0, 600);
+                    if (parts[1].length > 600) summary += '...';
+                  } else {
+                    summary = fullSummary.substring(0, 800);
+                    if (fullSummary.length > 800) summary += '...';
+                  }
                 }
               }
             } catch (e) {
               console.log('Could not read artifact for summary:', e.message);
             }
 
-            const body = [
+            // Build the comment body with improved formatting
+            const bodyParts = [
               `<img src="https://atriumn.com/logos/atriumn-logo.png" width="16" height="16" style="vertical-align: middle;"> **${current.name} phase complete**`,
-              "",
-              summary ? `**Key findings:**\n${summary}` : '',
-              "",
-              `📄 **Artifact:** [\`${path}\`](${url})`,
-              current.nextAction ? `**Next:** Use \`${current.nextAction}\` to proceed to ${current.next}.` : '**All phases complete!**'
-            ].filter(line => line !== '').join("\n");
+              ""
+            ];
+            
+            // Add codebase overview if available (for research phase)
+            if (codebaseOverview && taskPackId === 'research') {
+              bodyParts.push("### 📊 Codebase Overview");
+              bodyParts.push(codebaseOverview);
+              bodyParts.push("");
+            }
+            
+            // Add key findings if available
+            if (summary) {
+              bodyParts.push("### 🔍 Key Findings");
+              bodyParts.push(summary);
+              bodyParts.push("");
+            }
+            
+            // Add artifact link and next steps
+            bodyParts.push("---");
+            bodyParts.push(`📄 **Full Analysis:** [\`${path}\`](${url})`);
+            bodyParts.push("");
+            
+            if (current.nextAction) {
+              bodyParts.push(`🚀 **Next Step:** Use \`${current.nextAction}\` to proceed to ${current.next}.`);
+            } else {
+              bodyParts.push('🎉 **All phases complete!**');
+            }
+            
+            const body = bodyParts.join("\n");
 
             await github.rest.issues.createComment({ owner, repo, issue_number, body });
