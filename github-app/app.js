@@ -21,6 +21,11 @@ const TRIGGERS = {
   '🟣 ATRIUMN-IMPLEMENTATION-COMPLETE': 'implementation-complete'
 };
 
+// Special patterns that allow additional text
+const FLEXIBLE_TRIGGERS = {
+  '@atriumn start': 'pipeline-start'  // Allows "@atriumn start something"
+};
+
 // Workflow template
 const WORKFLOW_TEMPLATE = `name: Development Pipeline
 
@@ -192,8 +197,15 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
   const comment = payload.comment.body;
   const repo = payload.repository;
   const issue = payload.issue;
+  const commentUser = payload.comment.user.login;
   
-  console.log(`Processing comment: "${comment}"`);
+  // Ignore comments from bot accounts or automated systems
+  if (commentUser === 'github-actions[bot]' || commentUser === 'github-actions' || commentUser.includes('[bot]') || commentUser === 'atriumn-bot') {
+    console.log(`Ignoring comment from bot user: ${commentUser}`);
+    return;
+  }
+  
+  console.log(`Processing comment from ${commentUser}: "${comment}"`);
   
   // Check for trigger matches (must be on its own line)
   for (const [trigger, eventType] of Object.entries(TRIGGERS)) {
@@ -205,7 +217,14 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
     const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const triggerOnOwnLine = new RegExp(`^\\s*${escapedTrigger}\\s*$`, 'm');
     
-    if (triggerStandalone || triggerOnOwnLine.test(comment)) {
+    // Check flexible triggers (allow additional text after trigger)
+    let flexibleMatch = false;
+    if (FLEXIBLE_TRIGGERS[trigger]) {
+      const flexiblePattern = new RegExp(`^\\s*${escapedTrigger}(\\s|$)`, 'm');
+      flexibleMatch = flexiblePattern.test(comment);
+    }
+    
+    if (triggerStandalone || triggerOnOwnLine.test(comment) || flexibleMatch) {
       console.log(`Trigger matched: ${trigger} -> ${eventType}`);
       
       try {
