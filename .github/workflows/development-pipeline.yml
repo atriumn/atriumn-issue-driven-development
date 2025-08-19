@@ -403,10 +403,14 @@ jobs:
           
           @claude Please research the codebase for this issue following our research methodology:
           
+          **IMPORTANT**: First checkout the feature branch \`$BRANCH_NAME\` before starting research:
+          \`\`\`bash
+          git fetch origin
+          git checkout $BRANCH_NAME
+          \`\`\`
+          
           **PIPELINE BRANCH**: \`$BRANCH_NAME\` (feature branch for this issue)
           **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\`
-          
-          **🚫 GIT-FREE STRATEGY**: You do NOT need to perform any git operations (fetch, checkout, clone, etc.). Simply create and edit files in your current working directory. The pipeline will automatically commit and push your changes to the feature branch.
           
           **Research Requirements:**
           - Read any mentioned ticket files completely first
