@@ -171,27 +171,43 @@ jobs:
 
             const current = phaseInfo[taskPackId] || { name: taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1), next: null, nextAction: null };
             
-            // Try to extract summary from the artifact for richer commentary
+            // Try to extract key content from the artifact for richer commentary
             let summary = '';
             let codebaseOverview = '';
             try {
               if (fs.existsSync(path)) {
                 const content = fs.readFileSync(path, 'utf8');
                 
-                // Extract summary section if it exists
-                const summaryMatch = content.match(/## Summary\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
-                if (summaryMatch) {
-                  const fullSummary = summaryMatch[1].trim();
+                // Try different section patterns based on task pack
+                let sectionMatch;
+                if (taskPackId === 'research') {
+                  sectionMatch = content.match(/## Summary\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
+                } else if (taskPackId === 'plan') {
+                  sectionMatch = content.match(/## Overview\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
+                } else if (taskPackId === 'implement') {
+                  sectionMatch = content.match(/## Implementation Summary\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
+                } else if (taskPackId === 'validate') {
+                  sectionMatch = content.match(/## Validation Results\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
+                }
+                
+                if (sectionMatch) {
+                  const fullSection = sectionMatch[1].trim();
                   
-                  // Try to split into codebase overview and key findings
-                  const parts = fullSummary.split(/\*\*Key risks|Key risks/);
-                  if (parts.length > 1) {
-                    codebaseOverview = parts[0].trim();
-                    summary = `**Key risks${parts[1]}`.substring(0, 600);
-                    if (parts[1].length > 600) summary += '...';
+                  // For research: split into codebase overview and key findings
+                  if (taskPackId === 'research') {
+                    const parts = fullSection.split(/\*\*Key risks|Key risks/);
+                    if (parts.length > 1) {
+                      codebaseOverview = parts[0].trim();
+                      summary = `**Key risks${parts[1]}`.substring(0, 600);
+                      if (parts[1].length > 600) summary += '...';
+                    } else {
+                      summary = fullSection.substring(0, 800);
+                      if (fullSection.length > 800) summary += '...';
+                    }
                   } else {
-                    summary = fullSummary.substring(0, 800);
-                    if (fullSummary.length > 800) summary += '...';
+                    // For other phases, just use the section content
+                    summary = fullSection.substring(0, 800);
+                    if (fullSection.length > 800) summary += '...';
                   }
                 }
               }
@@ -212,9 +228,17 @@ jobs:
               bodyParts.push("");
             }
             
-            // Add key findings if available
+            // Add key content if available
             if (summary) {
-              bodyParts.push("### 🔍 Key Findings");
+              const sectionTitles = {
+                'research': '🔍 Key Findings',
+                'plan': '📋 Implementation Overview',  
+                'implement': '⚒️ Implementation Details',
+                'validate': '✅ Validation Results'
+              };
+              const sectionTitle = sectionTitles[taskPackId] || '📋 Key Details';
+              
+              bodyParts.push(`### ${sectionTitle}`);
               bodyParts.push(summary);
               bodyParts.push("");
             }
@@ -225,10 +249,7 @@ jobs:
             bodyParts.push("");
             
             if (current.nextAction) {
-              // Create a clickable link to jump to comment section
-              const commentLink = `https://github.com/${owner}/${repo}/issues/${issue_number}#issuecomment-new`;
-              
-              bodyParts.push(`🚀 **Next Step:** [📝 ${current.nextAction}](${commentLink}) to proceed to ${current.next}.`);
+              bodyParts.push(`🚀 **Next Step:** Comment \`${current.nextAction}\` to proceed to ${current.next}.`);
               bodyParts.push("");
               bodyParts.push(`> **Quick Copy:** \`${current.nextAction}\``);
             } else {
