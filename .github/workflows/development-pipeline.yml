@@ -401,7 +401,7 @@ jobs:
           
           ---
           
-          @claude Please research the codebase for this issue following our research methodology:
+          Please research the codebase for this issue following our research methodology:
           
           **PIPELINE BRANCH**: \`$BRANCH_NAME\` (feature branch for this issue)
           **Context File**: \`$THOUGHTS_DIR/shared/decisions/pipeline-issue-${{ inputs.issue_number }}.md\`
