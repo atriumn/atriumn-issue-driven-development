@@ -1161,7 +1161,7 @@ jobs:
           fi
 
       - name: Request implementation approval
-        if: steps.validate-impl.outputs.validation_passed == 'true' && steps.impl-mode.outputs.auto_proceed == 'false'
+        if: steps.validate.outputs.validation_passed == 'true' && steps.mode.outputs.auto_proceed == 'false'
         env:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -1173,7 +1173,7 @@ jobs:
           ⚙️ **Implementation Validation Required**
           
           **Automated Validation**: ✅ Passed
-          ${{ steps.validate-impl.outputs.validation_results }}
+          ${{ steps.validate.outputs.validation_results }}
           
           **Implementation Branch**: [\`$BRANCH_NAME\`](https://github.com/${{ inputs.repo_name }}/tree/$BRANCH_NAME)
           **Compare Changes**: [View Diff](https://github.com/${{ inputs.repo_name }}/compare/${{ needs.load-and-validate-config.outputs.base_branch }}...$BRANCH_NAME)
@@ -1194,7 +1194,7 @@ jobs:
           "
 
       - name: Auto-proceed to PR creation
-        if: steps.validate-impl.outputs.validation_passed == 'true' && steps.impl-mode.outputs.auto_proceed == 'true'
+        if: steps.validate.outputs.validation_passed == 'true' && steps.mode.outputs.auto_proceed == 'true'
         env:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -1206,7 +1206,7 @@ jobs:
           **Auto-proceeding to PR Creation**
           
           **Validation Results:**
-          ${{ steps.validate-impl.outputs.validation_results }}
+          ${{ steps.validate.outputs.validation_results }}
           
           🔄 Creating pull request..."
           
@@ -1225,7 +1225,7 @@ jobs:
           
           # Create PR using external script to avoid YAML parsing issues
           REPO_NAME="${{ inputs.repo_name }}"
-          VALIDATION_RESULTS="${{ steps.validate-impl.outputs.validation_results }}"
+          VALIDATION_RESULTS="${{ steps.validate.outputs.validation_results }}"
           
           chmod +x shared-workflows/scripts/create-pr.sh
           shared-workflows/scripts/create-pr.sh \
@@ -1243,7 +1243,7 @@ jobs:
           PR_NUMBER=$(gh pr view $BRANCH_NAME --repo "$REPO_NAME" --json number --jq -r '.number')
           
           # Update issue with PR link
-          VALIDATION_RESULTS_FINAL="${{ steps.validate-impl.outputs.validation_results }}"
+          VALIDATION_RESULTS_FINAL="${{ steps.validate.outputs.validation_results }}"
           gh issue comment $ISSUE_NUM --repo "$REPO_NAME" --body "
           🎉 **Pull Request Created**
           
