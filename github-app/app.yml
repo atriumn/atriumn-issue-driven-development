@@ -3,7 +3,7 @@ name: Atriumn Issue-Driven Development
 description: AI-powered development pipeline that turns GitHub issues into working code
 url: https://github.com/atriumn/atriumn-issue-driven-development
 hook_attributes:
-  url: https://your-app-domain.com/api/webhook
+  url: https://90a45654962b.ngrok-free.app/api/webhook
 redirect_url: https://github.com/atriumn/atriumn-issue-driven-development
 
 # Permissions required by the app

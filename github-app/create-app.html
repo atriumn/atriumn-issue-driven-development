@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Atriumn GitHub App</title>
+</head>
+<body>
+    <h1>Create Atriumn Issue-Driven Development App</h1>
+    <form action="https://github.com/settings/apps/new" method="post">
+        <input type="hidden" name="manifest" value='{
+            "name": "Atriumn Issue-Driven Development",
+            "description": "AI-powered development pipeline that turns GitHub issues into working code",
+            "url": "https://github.com/atriumn/atriumn-issue-driven-development",
+            "hook_attributes": {
+                "url": "https://90a45654962b.ngrok-free.app/api/webhook"
+            },
+            "redirect_url": "https://github.com/atriumn/atriumn-issue-driven-development",
+            "default_permissions": {
+                "issues": "read",
+                "contents": "read", 
+                "actions": "write",
+                "metadata": "read"
+            },
+            "default_events": ["issue_comment"],
+            "public": false,
+            "request_oauth_on_install": false
+        }'>
+        <input type="submit" value="Create GitHub App">
+    </form>
+</body>
+</html>
