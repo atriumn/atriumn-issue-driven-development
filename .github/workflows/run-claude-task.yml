@@ -179,8 +179,8 @@ jobs:
                 // Extract summary section if it exists
                 const summaryMatch = content.match(/## Summary\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*|$)/);
                 if (summaryMatch) {
-                  summary = summaryMatch[1].trim().substring(0, 300);
-                  if (summaryMatch[1].trim().length > 300) summary += '...';
+                  summary = summaryMatch[1].trim().substring(0, 800);
+                  if (summaryMatch[1].trim().length > 800) summary += '...';
                 }
               }
             } catch (e) {
@@ -188,12 +188,12 @@ jobs:
             }
 
             const body = [
-              `✅ **${current.name} phase complete**`,
+              `⚡ **${current.name} phase complete**`,
               "",
               summary ? `**Key findings:**\n${summary}` : '',
               "",
-              `📋 **Artifact:** [\`${path}\`](${url})`,
-              current.nextAction ? `🚀 **Next:** Use \`${current.nextAction}\` to proceed to ${current.next}.` : '🎉 **All phases complete!**'
+              `📄 **Artifact:** [\`${path}\`](${url})`,
+              current.nextAction ? `⚡ **Next:** Use \`${current.nextAction}\` to proceed to ${current.next}.` : '⚡ **All phases complete!**'
             ].filter(line => line !== '').join("\n");
 
             await github.rest.issues.createComment({ owner, repo, issue_number, body });
