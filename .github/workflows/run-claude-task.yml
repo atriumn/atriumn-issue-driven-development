@@ -145,27 +145,7 @@ jobs:
           git commit -m "meta: $META" || true
           git push origin "${{ inputs.feature_ref }}" || true
 
-      - name: Ensure Draft PR exists / updated
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const head = "${{ inputs.feature_ref }}";
-            const title = `Feature: Issue #${{ inputs.issue_number }} – multi-phase development`;
-            const body  = `Tracking PR for Issue #${{ inputs.issue_number }}.\n\n## Development Phases:\n- [ ] Research\n- [ ] Plan\n- [ ] Implement\n- [ ] Validate\n\nBranch: \`${head}\``;
-
-            const prs = await github.rest.pulls.list({ owner, repo, head: `${owner}:${head}`, state: 'open' });
-            if (prs.data.length) {
-              await github.rest.pulls.update({
-                owner, repo, pull_number: prs.data[0].number, title, body
-              });
-              core.info(`Updated existing PR #${prs.data[0].number}`);
-            } else {
-              const pr = await github.rest.pulls.create({
-                owner, repo, title, head, base: "develop", draft: true, body
-              });
-              core.info(`Created Draft PR #${pr.data.number}`);
-            }
+      # PR creation moved to GitHub App due to repository restrictions
 
       # Check run creation moved to GitHub App for marketplace compatibility
 
