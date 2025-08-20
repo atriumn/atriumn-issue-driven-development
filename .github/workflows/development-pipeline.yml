@@ -69,84 +69,157 @@ jobs:
           token: ${{ github.token }}
           ref: ${{ inputs.feature_ref }}
 
-      - name: Checkout shared task-packs
-        uses: actions/checkout@v4
-        with:
-          repository: atriumn/atriumn-issue-driven-development
-          path: shared-repo
-          sparse-checkout: |
-            .atriumn-shared/
-
-      - name: Load research task-pack
-        id: taskpack
-        run: |
-          # Install jq if not available
-          which jq || (sudo apt-get update && sudo apt-get install -y jq)
-          
-          # Debug: Show what was checked out
-          echo "🔍 Debugging checkout contents:"
-          find shared-repo -name "*.json" -o -name "*.md" | head -10
-          ls -la shared-repo/ || echo "No shared-repo directory"
-          ls -la shared-repo/.atriumn-shared/ || echo "No .atriumn-shared directory"
-          
-          # Load task-pack configuration
-          TASKPACK_FILE="shared-repo/.atriumn-shared/taskpacks/research.json"
-          PROMPT_FILE="shared-repo/.atriumn-shared/prompts/research.md"
-          
-          if [ ! -f "$TASKPACK_FILE" ]; then
-            echo "❌ Task-pack not found: $TASKPACK_FILE"
-            echo "Available files:"
-            find shared-repo -type f | head -20
-            exit 1
-          fi
-          
-          # Extract allowed tools from task-pack
-          ALLOWED_TOOLS=$(jq -r '.allowed_tools | join("\n")' "$TASKPACK_FILE")
-          echo "allowed_tools<<EOF" >> $GITHUB_OUTPUT
-          echo "$ALLOWED_TOOLS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          # Extract output path template and substitute variables
-          OUTPUT_TEMPLATE=$(jq -r '.output_path_template' "$TASKPACK_FILE")
-          OUTPUT_PATH="${OUTPUT_TEMPLATE//\${issue_number}/${{ inputs.issue_number }}}"
-          echo "output_path=$OUTPUT_PATH" >> $GITHUB_OUTPUT
-          
-          # Load and substitute prompt template
-          if [ ! -f "$PROMPT_FILE" ]; then
-            echo "❌ Prompt file not found: $PROMPT_FILE"
-            exit 1
-          fi
-          
-          # Substitute variables in prompt
-          PROMPT_CONTENT=$(cat "$PROMPT_FILE")
-          PROMPT_CONTENT="${PROMPT_CONTENT//\${feature_ref}/${{ inputs.feature_ref }}}"
-          PROMPT_CONTENT="${PROMPT_CONTENT//\${issue_number}/${{ inputs.issue_number }}}"
-          PROMPT_CONTENT="${PROMPT_CONTENT//\${repository}/${{ inputs.repo_name }}}"
-          PROMPT_CONTENT="${PROMPT_CONTENT//\${task_description}/${{ inputs.task_description }}}"
-          PROMPT_CONTENT="${PROMPT_CONTENT//\${output_path}/$OUTPUT_PATH}"
-          
-          echo "prompt_content<<EOF" >> $GITHUB_OUTPUT
-          echo "$PROMPT_CONTENT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          echo "✅ Task-pack loaded: research"
-          echo "📄 Output path: $OUTPUT_PATH"
-
       - name: Run Claude Code research
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
-          allowed_tools: ${{ steps.taskpack.outputs.allowed_tools }}
-          direct_prompt: ${{ steps.taskpack.outputs.prompt_content }}
+          allowed_tools: |
+            Read
+            Write
+            Edit
+            Grep
+            Glob
+            LS
+            TodoWrite
+          direct_prompt: |
+            You are the RESEARCH COORDINATOR for this run.
+
+            Context variables:
+            - feature_ref = "${{ inputs.feature_ref }}"
+            - issue_number = "${{ inputs.issue_number }}"
+            - repository = "${{ inputs.repo_name }}"
+            - task_description = "${{ inputs.task_description }}"
+            - output_path = "thoughts/shared/research/issue-${{ inputs.issue_number }}.md"
+            - decision_record_path = "thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md"
+
+            Allowed tools only: Read, Grep, Glob, LS, Write, Edit, MultiEdit, TodoWrite
+            Disallowed: Bash/shell, MCP/CLI/web/Linear/external calls.
+            Do everything INSIDE THIS ONE SESSION.
+
+            Overall goal:
+            Conduct comprehensive codebase research to answer the user's question by spawning parallel sub-agents INSIDE THIS SESSION, then synthesize a single research document at thoughts/shared/research/issue-${{ inputs.issue_number }}.md and a decision record at thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md.
+
+            Follow this order (exactly as in the slash command):
+
+            (1) Read any directly mentioned files FIRST
+            - If "${{ inputs.task_description }}" mentions specific files/docs/JSON, Read them FULLY (no limit/offset) BEFORE decomposing. Summarize notes to scratch, do not write final docs yet.
+
+            (2) Analyze and decompose the research question
+            - Break down "${{ inputs.task_description }}" into clear research areas.
+            - Use TodoWrite to create a short, explicit research plan (subtasks).
+
+            (3) Spawn parallel sub-agents (conceptually; do work sequentially in-session)
+            Create scratch files for each:
+              a) locator → WHERE relevant files/dirs live + 1-line purpose each
+                 - Write: thoughts/shared/research/tmp/${{ inputs.issue_number }}_locator.md
+
+              b) analyzer → HOW key flows work with file:line citations
+                 - Read the referenced files thoroughly.
+                 - Write: thoughts/shared/research/tmp/${{ inputs.issue_number }}_analyzer.md
+
+              c) patterns → similar implementations, tests, conventions that relate
+                 - Write: thoughts/shared/research/tmp/${{ inputs.issue_number }}_patterns.md
+
+              d) thoughts-locator → relevant docs under thoughts/ related to the topic
+                 - Write: thoughts/shared/research/tmp/${{ inputs.issue_number }}_thoughts_locator.md
+
+              e) thoughts-analyzer → extract key insights from the most relevant thoughts/ docs
+                 - Cite them by their actual paths.
+                 - Write: thoughts/shared/research/tmp/${{ inputs.issue_number }}_thoughts_analyzer.md
+
+            Important:
+            - Base every claim on files you actually read. Use concrete file:line citations for code.
+            - thoughts/ material is historical context; code is the primary truth.
+
+            (4) Synthesize
+            - After the five scratch files exist, synthesize them with your initial notes into final outputs.
+
+            (5) Write the Research Document at thoughts/shared/research/issue-${{ inputs.issue_number }}.md
+            Frontmatter (only fields you can fill without placeholders):
+            ---
+            date: [ISO 8601 timestamp you generate]
+            branch: "${{ inputs.feature_ref }}"
+            repository: "${{ inputs.repo_name }}"
+            issue: "${{ inputs.issue_number }}"
+            topic: "${{ inputs.task_description }}"
+            runner: "claude-code"
+            status: "complete"
+            ---
+
+            # Research: ${{ inputs.task_description }}
+
+            ## Research Question
+            - Restate the question in 1–2 lines.
+
+            ## Summary
+            - Concise, actionable summary answering the question.
+
+            ## Detailed Findings
+            - Organize by component/area discovered from the repo (do not assume tech stack names).
+            - For each area:
+              - Findings with precise file:line citations.
+              - Connections to other components.
+              - Notable implementation details.
+
+            ## Code References
+            - Compact list of concrete file:line citations you used above.
+
+            ## Architecture Insights
+            - Patterns, conventions, design decisions discovered.
+
+            ## Historical Context (from thoughts/)
+            - Relevant insights with actual thoughts/ paths.
+
+            ## Related Research
+            - Paths to other relevant docs inside thoughts/ if applicable.
+
+            ## Open Questions
+            - Any gaps or items needing follow-up.
+
+            (6) Write the Decision Record at thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md
+            Frontmatter (only what you can fill):
+            ---
+            date: [ISO 8601 timestamp you generate]
+            issue: "${{ inputs.issue_number }}"
+            topic: "${{ inputs.task_description }}"
+            status: "draft"
+            runner: "claude-code"
+            ---
+
+            # Decision Record: Research for Issue #${{ inputs.issue_number }}
+
+            ## Context
+            - Brief context of the repo and the research topic.
+
+            ## Options Considered
+            - Option A: …
+            - Option B: …
+            - (List only options you actually found in code/docs.)
+
+            ## Recommendation
+            - Your research-based recommendation (keep concise and evidence-backed).
+
+            ## Risks & Unknowns
+            - Any notable risks, edge cases, or missing information.
+
+            ## Next Actions
+            - Concrete next actions tied to findings (bulleted, short).
+
+            Quality guardrails:
+            - Read mentioned files before decomposition.
+            - Use TodoWrite for the plan.
+            - No external calls or web access.
+            - Cite file:line for code; cite thoughts/ by actual paths.
+            - Do not invent placeholder metadata fields; omit what you can't derive.
+            - Ensure all 5 scratch files exist, plus the 2 final artifacts.
+            - Ensure thoughts/shared/research/issue-${{ inputs.issue_number }}.md and thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md exist and are non-empty.
 
       - name: Validate research output
         run: |
           echo "🔍 Validating research output..."
-          RESEARCH_FILE="${{ steps.taskpack.outputs.output_path }}"
-          DECISION_FILE="thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md"
+          RESEARCH_FILE="thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md"
           
-          # Validate main research document
           if [ -f "$RESEARCH_FILE" ]; then
             echo "✅ Research document created: $RESEARCH_FILE"
             echo "📄 Content preview:"
@@ -164,61 +237,25 @@ jobs:
             echo "❌ Research document not found: $RESEARCH_FILE"
             exit 1
           fi
-          
-          # Validate decision record
-          if [ -f "$DECISION_FILE" ]; then
-            echo "✅ Decision record created: $DECISION_FILE"
-          else
-            echo "⚠️ Decision record not found: $DECISION_FILE (optional)"
-          fi
-          
-          # Check for scratch files (sub-agent outputs)
-          SCRATCH_DIR="thoughts/shared/research/tmp"
-          if [ -d "$SCRATCH_DIR" ]; then
-            SCRATCH_COUNT=$(find "$SCRATCH_DIR" -name "*${{ inputs.issue_number }}*" -type f | wc -l)
-            echo "📝 Found $SCRATCH_COUNT scratch files in $SCRATCH_DIR"
-          else
-            echo "📝 No scratch directory found (optional sub-agent outputs)"
-          fi
 
       - name: Commit and push research
         run: |
           git config user.name "Atriumn Pipeline"
           git config user.email "pipeline@atriumn.com"
-          
-          # Add all research artifacts
           git add thoughts/shared/research/
-          git add thoughts/shared/decisions/ || echo "No decisions to add"
-          
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Add research artifacts for issue #${{ inputs.issue_number }} (task-pack: research v1)"
-            git push origin ${{ inputs.feature_ref }}
-            echo "✅ Research artifacts committed and pushed"
-          fi
+          git commit -m "Add research for issue #${{ inputs.issue_number }}" || echo "No changes to commit"
+          git push origin ${{ inputs.feature_ref }}
 
       - name: Post research completion
         uses: actions/github-script@v7
         with:
           script: |
-            const body = '🔬 **Research Phase Complete**\n\n' +
-              '**Artifacts Created:**\n' +
-              '- **Research Document**: `${{ steps.taskpack.outputs.output_path }}`\n' +
-              '- **Decision Record**: `thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md`\n' +
-              '- **Sub-agent Files**: `thoughts/shared/research/tmp/` (detailed analysis)\n\n' +
-              '**Branch**: `${{ inputs.feature_ref }}`\n\n' +
-              '**Next Step**: Review the research and approve with `/atriumn-approve-research` to advance to planning phase.';
-            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: ${{ inputs.issue_number }},
-              body: body
-            });
-            
-            console.log('✅ Posted research completion comment');
+              body: '🔬 **Research Phase Complete**\n\nResearch document created and committed to `${{ inputs.feature_ref }}`.\n\n**Next**: Review the research and approve with `/atriumn-approve-research` to advance to planning phase.'
+            })
 
   approve-research:
     if: inputs.action == 'approve' && inputs.phase == 'research'
