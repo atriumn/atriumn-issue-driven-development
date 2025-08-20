@@ -1,5 +1,11 @@
 name: Development Pipeline
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
 on:
   workflow_call:
     inputs:
@@ -34,12 +40,9 @@ on:
         type: string
         description: 'The comment body that triggered this workflow'
     secrets:
-      REPO_TOKEN:
-        required: true
-        description: 'GitHub token with repository access'
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
-        description: 'Claude Code OAuth token for AI integration'
+        description: 'Claude Code OAuth token from consumer repository'
 
   # Direct repository dispatch (more efficient than issue_comment)
   repository_dispatch:
@@ -72,14 +75,14 @@ jobs:
       - name: Checkout shared workflows
         uses: actions/checkout@v4
         with:
-          repository: atriumn/atriumn-shared-workflows
+          repository: atriumn/atriumn-issue-driven-development
           path: shared-workflows
           
       - name: Checkout target repository
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           path: target-repo
           
       - name: Install configuration validator
@@ -253,13 +256,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           fetch-depth: 0
           
       - name: Parse pipeline configuration
         id: parse
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           COMMENT="${{ github.event.comment.body }}"
           
@@ -278,7 +281,7 @@ jobs:
       - name: Create feature branch
         id: create-branch
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Configure git user for branch operations
           git config user.name "Pipeline Bot"
@@ -320,7 +323,7 @@ jobs:
 
       - name: Create decision record
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH_NAME="${{ steps.create-branch.outputs.name }}"
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
@@ -376,7 +379,7 @@ jobs:
 
       - name: Add branch label to issue
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH_NAME="${{ steps.create-branch.outputs.name }}"
           
@@ -387,7 +390,7 @@ jobs:
 
       - name: Trigger research phase
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH_NAME="${{ steps.create-branch.outputs.name }}"
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
@@ -457,7 +460,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           ref: ${{ steps.research-branch.outputs.name }}
           
       - name: Find and validate research document
@@ -532,7 +535,7 @@ jobs:
       - name: Handle validation failure
         if: steps.validate-research.outputs.validation_passed == 'false'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --body "
           ❌ **Research Validation Failed**
@@ -568,7 +571,7 @@ jobs:
       - name: Request human approval
         if: steps.validate-research.outputs.validation_passed == 'true' && steps.research-mode.outputs.auto_proceed == 'false'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           RESEARCH_DOC="${{ steps.validate-research.outputs.research_doc }}"
           BRANCH_NAME="${{ steps.research-branch.outputs.name }}"
@@ -607,7 +610,7 @@ jobs:
       - name: Auto-proceed to planning
         if: steps.validate-research.outputs.validation_passed == 'true' && steps.research-mode.outputs.auto_proceed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --body "
           🔍 **Research Validation**: ✅ Passed (automated)
@@ -684,12 +687,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           ref: ${{ steps.planning-branch.outputs.name }}
 
       - name: Record approval and trigger planning
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment ${{ inputs.issue_number }} --repo ${{ inputs.repo_name }} --body "
           ✅ **Research Approved by @${{ github.event.comment.user.login }}**
@@ -768,13 +771,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           ref: ${{ steps.plan-branch.outputs.name }}
           
       - name: Run Claude Code to capture planning files
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@beta
         with:
-          github-token: ${{ secrets.REPO_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
           # Claude Code will detect the completion signal and capture the planning files
           # This runs in the same workspace, so files Claude created will be available
           
@@ -857,7 +861,7 @@ jobs:
       - name: Request plan approval
         if: steps.validate-plan.outputs.validation_passed == 'true' && steps.plan-mode.outputs.auto_proceed == 'false'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           PLAN_DOC="${{ steps.validate-plan.outputs.plan_doc }}"
           BRANCH_NAME="${{ steps.plan-branch.outputs.name }}"
@@ -896,7 +900,7 @@ jobs:
       - name: Auto-proceed to implementation
         if: steps.validate-plan.outputs.validation_passed == 'true' && steps.plan-mode.outputs.auto_proceed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ISSUE_NUM=${{ inputs.issue_number || github.event.issue.number || github.event.client_payload.issue_number }}
           
@@ -946,12 +950,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           ref: ${{ steps.impl-branch.outputs.name }}
 
       - name: Record approval and trigger implementation
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ISSUE_NUM=${{ inputs.issue_number }}
           THOUGHTS_DIR="${{ needs.load-and-validate-config.outputs.thoughts_dir }}"
@@ -1008,14 +1012,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           ref: ${{ steps.validate-impl-branch.outputs.name }}
           path: target-repo
           
       - name: Run Claude Code to capture implementation files
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@beta
         with:
-          github-token: ${{ secrets.REPO_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
           # Claude Code will detect the completion signal and capture the implementation files
           # This runs in the same workspace, so files Claude created will be available
           
@@ -1043,7 +1048,7 @@ jobs:
       - name: Validate implementation
         id: validate-impl
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           cd target-repo
           
@@ -1134,7 +1139,7 @@ jobs:
       - name: Request implementation approval
         if: steps.validate-impl.outputs.validation_passed == 'true' && steps.impl-mode.outputs.auto_proceed == 'false'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH_NAME="${{ steps.validate-impl-branch.outputs.name }}"
           ISSUE_NUM=${{ inputs.issue_number || github.event.issue.number || github.event.client_payload.issue_number }}
@@ -1167,7 +1172,7 @@ jobs:
       - name: Auto-proceed to PR creation
         if: steps.validate-impl.outputs.validation_passed == 'true' && steps.impl-mode.outputs.auto_proceed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH_NAME="${{ steps.validate-impl-branch.outputs.name }}"
           ISSUE_NUM=${{ inputs.issue_number || github.event.issue.number || github.event.client_payload.issue_number }}
@@ -1251,12 +1256,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           ref: ${{ steps.pr-branch.outputs.name }}
 
       - name: Record approval and create PR
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ISSUE_NUM=${{ inputs.issue_number }}
           
@@ -1276,14 +1281,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           fetch-depth: 0
           path: target-repo
           
       - name: Get pipeline branch
         id: get-branch
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Get branch name from pipeline label description
           ISSUE_NUM=${{ inputs.issue_number }}
@@ -1292,7 +1297,7 @@ jobs:
           
       - name: Create pull request
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ISSUE_NUM=${{ inputs.issue_number }}
           BRANCH_NAME="${{ steps.get-branch.outputs.name }}"
