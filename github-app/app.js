@@ -34,6 +34,65 @@ const APPROVAL_TRIGGERS = {
 // GitHub App now dispatches directly to task pack workflows
 // No static workflow template needed - repos use their own claude.yml dispatcher
 
+// Function to create PR after workflow creates commits
+async function createPRWhenReady(octokit, repo, issue, featureRef, maxRetries = 6) {
+  const prTitle = `Feature: Issue #${issue.number} – multi-phase development`;
+  const prBody = `Tracking PR for Issue #${issue.number}.
+
+## Development Phases:
+- [ ] Research
+- [ ] Plan  
+- [ ] Implement
+- [ ] Validate
+
+**Issue:** ${issue.title}
+**Branch:** \`${featureRef}\`
+
+This PR will be updated automatically as each phase completes.`;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Check if PR already exists
+      const existingPRs = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
+        owner: repo.owner.login,
+        repo: repo.name,
+        head: `${repo.owner.login}:${featureRef}`,
+        state: 'open'
+      });
+
+      if (existingPRs.data.length > 0) {
+        console.log(`Draft PR already exists for ${featureRef}: #${existingPRs.data[0].number}`);
+        return;
+      }
+
+      // Try to create PR
+      const newPR = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
+        owner: repo.owner.login,
+        repo: repo.name,
+        title: prTitle,
+        head: featureRef,
+        base: 'develop',
+        body: prBody,
+        draft: true
+      });
+      
+      console.log(`Created draft PR #${newPR.data.number} for ${featureRef}`);
+      return;
+      
+    } catch (error) {
+      if (error.message.includes('No commits between') && attempt < maxRetries) {
+        console.log(`Attempt ${attempt}: No commits yet, waiting 30s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+        continue;
+      }
+      
+      throw error; // Re-throw if it's not a "no commits" error or we've exhausted retries
+    }
+  }
+  
+  throw new Error(`Failed to create PR after ${maxRetries} attempts - workflow may not have created commits`);
+}
+
 // Auto-setup workflow when app is installed
 app.webhooks.on('installation.created', async ({ payload }) => {
   console.log('App installed on repositories:', payload.repositories?.map(r => r.full_name));
@@ -257,65 +316,26 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
           }
         }
         
-        // Create or update draft PR for the feature branch
-        try {
-          const prTitle = `Feature: Issue #${issue.number} – multi-phase development`;
-          const prBody = `Tracking PR for Issue #${issue.number}.
-
-## Development Phases:
-- [ ] Research
-- [ ] Plan  
-- [ ] Implement
-- [ ] Validate
-
-**Issue:** ${issue.title}
-**Branch:** \`${featureRef}\`
-
-This PR will be updated automatically as each phase completes.`;
-
-          // Check if PR already exists
-          const existingPRs = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            head: `${repo.owner.login}:${featureRef}`,
-            state: 'open'
-          });
-
-          if (existingPRs.data.length > 0) {
-            console.log(`Draft PR already exists for ${featureRef}: #${existingPRs.data[0].number}`);
-          } else {
-            // Create new draft PR
-            const newPR = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
-              owner: repo.owner.login,
-              repo: repo.name,
-              title: prTitle,
-              head: featureRef,
-              base: 'develop',
-              body: prBody,
-              draft: true
-            });
-            
-            console.log(`Created draft PR #${newPR.data.number} for ${featureRef}`);
-          }
-        } catch (prError) {
-          console.error(`Failed to create/update PR for ${featureRef}:`, prError.message);
-          // Don't fail the entire process if PR creation fails
-        }
-        
-        // Dispatch workflow_dispatch to claude.yml (or specific task workflow)
-        await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
+        // Send repository_dispatch to consumer repo's atriumn-pipeline.yml
+        const repositoryDispatch = await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
           owner: repo.owner.login,
           repo: repo.name,
-          workflow_id: 'claude.yml', // This will call run-claude-task.yml
-          ref: 'develop',
-          inputs: {
-            feature_ref: featureRef,
+          event_type: 'pipeline-start',
+          client_payload: {
             issue_number: String(issue.number),
-            task_description: taskDescription
+            feature_ref: featureRef,
+            task_description: taskDescription,
+            trigger_comment: comment,
+            task_pack: taskPackId
           }
         });
         
         console.log(`Successfully dispatched ${taskPackId} task pack for issue #${issue.number}`);
+        
+        // Create PR after workflow creates commits (async, don't wait)
+        createPRWhenReady(octokit, repo, issue, featureRef).catch(err => 
+          console.error(`Failed to create PR for ${featureRef}:`, err.message)
+        );
         
         // Comment on issue to acknowledge
         await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
