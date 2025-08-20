@@ -62,22 +62,132 @@ jobs:
     if: inputs.action == 'run' && inputs.phase == 'research'
     runs-on: ubuntu-latest
     steps:
-      - name: Run Research Phase
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo_name }}
+          token: ${{ github.token }}
+          ref: ${{ inputs.feature_ref }}
+
+      - name: Run Claude Code research
+        uses: anthropics/claude-code-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_tools: |
+            Read
+            Write
+            Edit
+            Grep
+            Glob
+            LS
+            TodoWrite
+          direct_prompt: |
+            You are conducting research for issue #${{ inputs.issue_number }}.
+            
+            **Task**: ${{ inputs.task_description }}
+            
+            **Requirements**:
+            1. Create research document at: `thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md`
+            2. Include YAML frontmatter with: date, researcher, issue_number, phase
+            3. Research the codebase thoroughly for this issue
+            4. Include file references with line numbers (e.g., `file.js:123`)
+            5. Provide actionable insights and recommendations
+            
+            **Success criteria**: Research document exists and contains substantive findings.
+
+      - name: Validate research output
         run: |
-          echo "🔬 Running research phase for issue #${{ inputs.issue_number }}"
-          echo "Task: ${{ inputs.task_description }}"
-          echo "Feature branch: ${{ inputs.feature_ref }}"
-          # TODO: Implement Claude Code execution with research task-pack
+          echo "🔍 Validating research output..."
+          RESEARCH_FILE="thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md"
+          
+          if [ -f "$RESEARCH_FILE" ]; then
+            echo "✅ Research document created: $RESEARCH_FILE"
+            echo "📄 Content preview:"
+            head -20 "$RESEARCH_FILE"
+            
+            # Check for substantive content
+            WORD_COUNT=$(wc -w < "$RESEARCH_FILE")
+            if [ "$WORD_COUNT" -gt 100 ]; then
+              echo "✅ Research document has sufficient content ($WORD_COUNT words)"
+            else
+              echo "❌ Research document too short ($WORD_COUNT words)"
+              exit 1
+            fi
+          else
+            echo "❌ Research document not found: $RESEARCH_FILE"
+            exit 1
+          fi
+
+      - name: Commit and push research
+        run: |
+          git config user.name "Atriumn Pipeline"
+          git config user.email "pipeline@atriumn.com"
+          git add thoughts/shared/research/
+          git commit -m "Add research for issue #${{ inputs.issue_number }}" || echo "No changes to commit"
+          git push origin ${{ inputs.feature_ref }}
+
+      - name: Post research completion
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.issue_number }},
+              body: '🔬 **Research Phase Complete**\n\nResearch document created and committed to `${{ inputs.feature_ref }}`.\n\n**Next**: Review the research and approve with `/atriumn-approve-research` to advance to planning phase.'
+            })
 
   approve-research:
     if: inputs.action == 'approve' && inputs.phase == 'research'
     runs-on: ubuntu-latest
     steps:
-      - name: Approve Research Phase
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo_name }}
+          token: ${{ github.token }}
+          ref: ${{ inputs.feature_ref }}
+
+      - name: Validate research exists
         run: |
-          echo "✅ Approving research phase for issue #${{ inputs.issue_number }}"
-          echo "Approver comment: ${{ inputs.trigger_comment }}"
-          # TODO: Validate research artifacts and advance to next phase
+          echo "🔍 Validating research artifacts for issue #${{ inputs.issue_number }}"
+          # Check if research files exist in feature branch
+          if find thoughts/shared/research -name "*issue-${{ inputs.issue_number }}*" -type f | head -1; then
+            echo "✅ Research artifacts found"
+          else
+            echo "❌ No research artifacts found"
+            exit 1
+          fi
+
+      - name: Auto-advance to planning phase
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🚀 Research approved, auto-advancing to planning phase...')
+            
+            // Dispatch planning phase automatically
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'atriumn-pipeline',
+              client_payload: {
+                action: 'run',
+                phase: 'plan', 
+                issue_number: '${{ inputs.issue_number }}',
+                feature_ref: '${{ inputs.feature_ref }}',
+                task_description: 'Planning phase auto-started after research approval',
+                initiator: 'auto-advance'
+              }
+            })
+            
+            // Comment on issue
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.issue_number }},
+              body: '✅ **Research Approved** - Auto-advancing to planning phase\n\n🚀 Starting planning phase automatically...'
+            })
 
   run-plan:
     if: inputs.action == 'run' && inputs.phase == 'plan'
@@ -92,10 +202,32 @@ jobs:
     if: inputs.action == 'approve' && inputs.phase == 'plan'
     runs-on: ubuntu-latest
     steps:
-      - name: Approve Planning Phase
-        run: |
-          echo "✅ Approving planning phase for issue #${{ inputs.issue_number }}"
-          # TODO: Validate plan artifacts and advance to implementation
+      - name: Auto-advance to implementation phase
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🚀 Plan approved, auto-advancing to implementation phase...')
+            
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'atriumn-pipeline',
+              client_payload: {
+                action: 'run',
+                phase: 'implement', 
+                issue_number: '${{ inputs.issue_number }}',
+                feature_ref: '${{ inputs.feature_ref }}',
+                task_description: 'Implementation phase auto-started after plan approval',
+                initiator: 'auto-advance'
+              }
+            })
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.issue_number }},
+              body: '✅ **Plan Approved** - Auto-advancing to implementation phase\n\n⚙️ Starting implementation phase automatically...'
+            })
 
   run-implement:
     if: inputs.action == 'run' && inputs.phase == 'implement'
@@ -110,10 +242,32 @@ jobs:
     if: inputs.action == 'approve' && inputs.phase == 'implement'
     runs-on: ubuntu-latest
     steps:
-      - name: Approve Implementation Phase
-        run: |
-          echo "✅ Approving implementation phase for issue #${{ inputs.issue_number }}"
-          # TODO: Validate implementation artifacts and advance to validation
+      - name: Auto-advance to validation phase
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🚀 Implementation approved, auto-advancing to validation phase...')
+            
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'atriumn-pipeline',
+              client_payload: {
+                action: 'run',
+                phase: 'validate', 
+                issue_number: '${{ inputs.issue_number }}',
+                feature_ref: '${{ inputs.feature_ref }}',
+                task_description: 'Validation phase auto-started after implementation approval',
+                initiator: 'auto-advance'
+              }
+            })
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.issue_number }},
+              body: '✅ **Implementation Approved** - Auto-advancing to validation phase\n\n🧪 Starting validation phase automatically...'
+            })
 
   run-validate:
     if: inputs.action == 'run' && inputs.phase == 'validate'
@@ -128,10 +282,20 @@ jobs:
     if: inputs.action == 'approve' && inputs.phase == 'validate'
     runs-on: ubuntu-latest
     steps:
-      - name: Approve Validation Phase
-        run: |
-          echo "✅ Approving validation phase for issue #${{ inputs.issue_number }}"
-          # TODO: Final approval and merge readiness
+      - name: Mark ready for merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🎉 All phases complete! Marking ready for merge...')
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.issue_number }},
+              body: '🎉 **All Phases Complete!**\n\n✅ Research → Plan → Implementation → Validation\n\n**Ready for merge** - PR can now be reviewed and merged.'
+            })
+            
+            // TODO: Optionally set PR to ready for review, add labels, etc.
 
   # Legacy configuration loading job (keeping for now)
   load-and-validate-config:
