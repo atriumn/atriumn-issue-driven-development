@@ -203,23 +203,22 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const body = '🔬 **Research Phase Complete**\n\n' +
+              '**Artifacts Created:**\n' +
+              '- **Research Document**: `${{ steps.taskpack.outputs.output_path }}`\n' +
+              '- **Decision Record**: `thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md`\n' +
+              '- **Sub-agent Files**: `thoughts/shared/research/tmp/` (detailed analysis)\n\n' +
+              '**Branch**: `${{ inputs.feature_ref }}`\n\n' +
+              '**Next Step**: Review the research and approve with `/atriumn-approve-research` to advance to planning phase.';
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: ${{ inputs.issue_number }},
-              body: `🔬 **Research Phase Complete**
-
-**Artifacts Created:**
-- **Research Document**: \`${{ steps.taskpack.outputs.output_path }}\`
-- **Decision Record**: \`thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md\`
-- **Sub-agent Files**: \`thoughts/shared/research/tmp/\` (detailed analysis)
-
-**Branch**: \`${{ inputs.feature_ref }}\`
-
-**Next Step**: Review the research and approve with \`/atriumn-approve-research\` to advance to planning phase.`
-            })
+              body: body
+            });
             
-            console.log('✅ Posted research completion comment')
+            console.log('✅ Posted research completion comment');
 
   approve-research:
     if: inputs.action == 'approve' && inputs.phase == 'research'
