@@ -48,7 +48,7 @@ jobs:
       - name: Checkout shared workflows
         uses: actions/checkout@v4
         with:
-          repository: atriumn/atriumn-shared-workflows
+          repository: atriumn/atriumn-issue-driven-development
           path: _shared
 
       - name: Resolve Task Pack (JSON) + Prompt
