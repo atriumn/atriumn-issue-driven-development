@@ -73,19 +73,30 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: atriumn/atriumn-issue-driven-development
-          path: .atriumn-shared
+          path: shared-repo
           sparse-checkout: |
             .atriumn-shared/
 
       - name: Load research task-pack
         id: taskpack
         run: |
+          # Install jq if not available
+          which jq || (sudo apt-get update && sudo apt-get install -y jq)
+          
+          # Debug: Show what was checked out
+          echo "🔍 Debugging checkout contents:"
+          find shared-repo -name "*.json" -o -name "*.md" | head -10
+          ls -la shared-repo/ || echo "No shared-repo directory"
+          ls -la shared-repo/.atriumn-shared/ || echo "No .atriumn-shared directory"
+          
           # Load task-pack configuration
-          TASKPACK_FILE=".atriumn-shared/.atriumn-shared/taskpacks/research.json"
-          PROMPT_FILE=".atriumn-shared/.atriumn-shared/prompts/research.md"
+          TASKPACK_FILE="shared-repo/.atriumn-shared/taskpacks/research.json"
+          PROMPT_FILE="shared-repo/.atriumn-shared/prompts/research.md"
           
           if [ ! -f "$TASKPACK_FILE" ]; then
             echo "❌ Task-pack not found: $TASKPACK_FILE"
+            echo "Available files:"
+            find shared-repo -type f | head -20
             exit 1
           fi
           
