@@ -74,6 +74,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          mode: direct
+          trigger_phrase: ""
+          label_trigger: ""
+          branch_prefix: ""
           allowed_tools: |
             Read
             Write
@@ -218,7 +222,7 @@ jobs:
       - name: Validate research output
         run: |
           echo "🔍 Validating research output..."
-          RESEARCH_FILE="thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md"
+          RESEARCH_FILE="thoughts/shared/research/issue-${{ inputs.issue_number }}.md"
           
           if [ -f "$RESEARCH_FILE" ]; then
             echo "✅ Research document created: $RESEARCH_FILE"
