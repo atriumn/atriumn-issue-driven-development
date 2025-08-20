@@ -69,38 +69,73 @@ jobs:
           token: ${{ github.token }}
           ref: ${{ inputs.feature_ref }}
 
+      - name: Checkout shared task-packs
+        uses: actions/checkout@v4
+        with:
+          repository: atriumn/atriumn-issue-driven-development
+          path: .atriumn-shared
+          sparse-checkout: |
+            .atriumn-shared/
+
+      - name: Load research task-pack
+        id: taskpack
+        run: |
+          # Load task-pack configuration
+          TASKPACK_FILE=".atriumn-shared/.atriumn-shared/taskpacks/research.json"
+          PROMPT_FILE=".atriumn-shared/.atriumn-shared/prompts/research.md"
+          
+          if [ ! -f "$TASKPACK_FILE" ]; then
+            echo "❌ Task-pack not found: $TASKPACK_FILE"
+            exit 1
+          fi
+          
+          # Extract allowed tools from task-pack
+          ALLOWED_TOOLS=$(jq -r '.allowed_tools | join("\n")' "$TASKPACK_FILE")
+          echo "allowed_tools<<EOF" >> $GITHUB_OUTPUT
+          echo "$ALLOWED_TOOLS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Extract output path template and substitute variables
+          OUTPUT_TEMPLATE=$(jq -r '.output_path_template' "$TASKPACK_FILE")
+          OUTPUT_PATH="${OUTPUT_TEMPLATE//\${issue_number}/${{ inputs.issue_number }}}"
+          echo "output_path=$OUTPUT_PATH" >> $GITHUB_OUTPUT
+          
+          # Load and substitute prompt template
+          if [ ! -f "$PROMPT_FILE" ]; then
+            echo "❌ Prompt file not found: $PROMPT_FILE"
+            exit 1
+          fi
+          
+          # Substitute variables in prompt
+          PROMPT_CONTENT=$(cat "$PROMPT_FILE")
+          PROMPT_CONTENT="${PROMPT_CONTENT//\${feature_ref}/${{ inputs.feature_ref }}}"
+          PROMPT_CONTENT="${PROMPT_CONTENT//\${issue_number}/${{ inputs.issue_number }}}"
+          PROMPT_CONTENT="${PROMPT_CONTENT//\${repository}/${{ inputs.repo_name }}}"
+          PROMPT_CONTENT="${PROMPT_CONTENT//\${task_description}/${{ inputs.task_description }}}"
+          PROMPT_CONTENT="${PROMPT_CONTENT//\${output_path}/$OUTPUT_PATH}"
+          
+          echo "prompt_content<<EOF" >> $GITHUB_OUTPUT
+          echo "$PROMPT_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "✅ Task-pack loaded: research"
+          echo "📄 Output path: $OUTPUT_PATH"
+
       - name: Run Claude Code research
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
-          allowed_tools: |
-            Read
-            Write
-            Edit
-            Grep
-            Glob
-            LS
-            TodoWrite
-          direct_prompt: |
-            You are conducting research for issue #${{ inputs.issue_number }}.
-            
-            **Task**: ${{ inputs.task_description }}
-            
-            **Requirements**:
-            1. Create research document at: `thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md`
-            2. Include YAML frontmatter with: date, researcher, issue_number, phase
-            3. Research the codebase thoroughly for this issue
-            4. Include file references with line numbers (e.g., `file.js:123`)
-            5. Provide actionable insights and recommendations
-            
-            **Success criteria**: Research document exists and contains substantive findings.
+          allowed_tools: ${{ steps.taskpack.outputs.allowed_tools }}
+          direct_prompt: ${{ steps.taskpack.outputs.prompt_content }}
 
       - name: Validate research output
         run: |
           echo "🔍 Validating research output..."
-          RESEARCH_FILE="thoughts/shared/research/issue-${{ inputs.issue_number }}-research.md"
+          RESEARCH_FILE="${{ steps.taskpack.outputs.output_path }}"
+          DECISION_FILE="thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md"
           
+          # Validate main research document
           if [ -f "$RESEARCH_FILE" ]; then
             echo "✅ Research document created: $RESEARCH_FILE"
             echo "📄 Content preview:"
@@ -118,14 +153,46 @@ jobs:
             echo "❌ Research document not found: $RESEARCH_FILE"
             exit 1
           fi
+          
+          # Validate decision record
+          if [ -f "$DECISION_FILE" ]; then
+            echo "✅ Decision record created: $DECISION_FILE"
+          else
+            echo "⚠️ Decision record not found: $DECISION_FILE (optional)"
+          fi
+          
+          # Check for scratch files (sub-agent outputs)
+          SCRATCH_DIR="thoughts/shared/research/tmp"
+          if [ -d "$SCRATCH_DIR" ]; then
+            SCRATCH_COUNT=$(find "$SCRATCH_DIR" -name "*${{ inputs.issue_number }}*" -type f | wc -l)
+            echo "📝 Found $SCRATCH_COUNT scratch files in $SCRATCH_DIR"
+          else
+            echo "📝 No scratch directory found (optional sub-agent outputs)"
+          fi
 
       - name: Commit and push research
         run: |
           git config user.name "Atriumn Pipeline"
           git config user.email "pipeline@atriumn.com"
+          
+          # Add all research artifacts
           git add thoughts/shared/research/
-          git commit -m "Add research for issue #${{ inputs.issue_number }}" || echo "No changes to commit"
-          git push origin ${{ inputs.feature_ref }}
+          git add thoughts/shared/decisions/ || echo "No decisions to add"
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add research and decision record for issue #${{ inputs.issue_number }}
+
+- Research document: ${{ steps.taskpack.outputs.output_path }}
+- Decision record: thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md
+- Sub-agent scratch files: thoughts/shared/research/tmp/
+
+Generated by task-pack: research v1"
+            git push origin ${{ inputs.feature_ref }}
+            echo "✅ Research artifacts committed and pushed"
+          fi
 
       - name: Post research completion
         uses: actions/github-script@v7
@@ -135,8 +202,19 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: ${{ inputs.issue_number }},
-              body: '🔬 **Research Phase Complete**\n\nResearch document created and committed to `${{ inputs.feature_ref }}`.\n\n**Next**: Review the research and approve with `/atriumn-approve-research` to advance to planning phase.'
+              body: `🔬 **Research Phase Complete**
+
+**Artifacts Created:**
+- **Research Document**: \`${{ steps.taskpack.outputs.output_path }}\`
+- **Decision Record**: \`thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md\`
+- **Sub-agent Files**: \`thoughts/shared/research/tmp/\` (detailed analysis)
+
+**Branch**: \`${{ inputs.feature_ref }}\`
+
+**Next Step**: Review the research and approve with \`/atriumn-approve-research\` to advance to planning phase.`
             })
+            
+            console.log('✅ Posted research completion comment')
 
   approve-research:
     if: inputs.action == 'approve' && inputs.phase == 'research'
