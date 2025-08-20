@@ -14,27 +14,25 @@ on:
         type: string
         description: 'Repository name for configuration lookup'
       issue_number:
+        required: true
+        type: string
+        description: 'Issue number'
+      feature_ref:
         required: false
         type: string
-        description: 'Issue number if called from issue context'
-      branch_name:
+        description: 'Feature branch reference'
+      action:
+        required: true
+        type: string
+        description: 'Action to perform: run or approve'
+      phase:
+        required: true
+        type: string
+        description: 'Phase: research, plan, implement, validate'
+      task_description:
         required: false
         type: string
-        description: 'Optional branch name override'
-      pipeline_id:
-        required: false
-        type: string
-        description: 'Optional pipeline ID for tracking'
-      human_validation:
-        required: false
-        type: boolean
-        default: true
-        description: 'Enable human validation between phases'
-      test_mode:
-        required: false
-        type: boolean
-        default: false
-        description: 'Run in test mode'
+        description: 'Task description for run actions'
       trigger_comment:
         required: false
         type: string
@@ -59,7 +57,83 @@ on:
         type: string
 
 jobs:
-  # Enhanced configuration loading job
+  # Route to specific jobs based on action and phase
+  run-research:
+    if: inputs.action == 'run' && inputs.phase == 'research'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Research Phase
+        run: |
+          echo "🔬 Running research phase for issue #${{ inputs.issue_number }}"
+          echo "Task: ${{ inputs.task_description }}"
+          echo "Feature branch: ${{ inputs.feature_ref }}"
+          # TODO: Implement Claude Code execution with research task-pack
+
+  approve-research:
+    if: inputs.action == 'approve' && inputs.phase == 'research'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve Research Phase
+        run: |
+          echo "✅ Approving research phase for issue #${{ inputs.issue_number }}"
+          echo "Approver comment: ${{ inputs.trigger_comment }}"
+          # TODO: Validate research artifacts and advance to next phase
+
+  run-plan:
+    if: inputs.action == 'run' && inputs.phase == 'plan'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Planning Phase
+        run: |
+          echo "📋 Running planning phase for issue #${{ inputs.issue_number }}"
+          # TODO: Implement Claude Code execution with plan task-pack
+
+  approve-plan:
+    if: inputs.action == 'approve' && inputs.phase == 'plan'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve Planning Phase
+        run: |
+          echo "✅ Approving planning phase for issue #${{ inputs.issue_number }}"
+          # TODO: Validate plan artifacts and advance to implementation
+
+  run-implement:
+    if: inputs.action == 'run' && inputs.phase == 'implement'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Implementation Phase
+        run: |
+          echo "⚙️ Running implementation phase for issue #${{ inputs.issue_number }}"
+          # TODO: Implement Claude Code execution with implement task-pack
+
+  approve-implement:
+    if: inputs.action == 'approve' && inputs.phase == 'implement'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve Implementation Phase
+        run: |
+          echo "✅ Approving implementation phase for issue #${{ inputs.issue_number }}"
+          # TODO: Validate implementation artifacts and advance to validation
+
+  run-validate:
+    if: inputs.action == 'run' && inputs.phase == 'validate'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Validation Phase
+        run: |
+          echo "🧪 Running validation phase for issue #${{ inputs.issue_number }}"
+          # TODO: Implement Claude Code execution with validate task-pack
+
+  approve-validate:
+    if: inputs.action == 'approve' && inputs.phase == 'validate'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve Validation Phase
+        run: |
+          echo "✅ Approving validation phase for issue #${{ inputs.issue_number }}"
+          # TODO: Final approval and merge readiness
+
+  # Legacy configuration loading job (keeping for now)
   load-and-validate-config:
     runs-on: ubuntu-latest
     outputs:

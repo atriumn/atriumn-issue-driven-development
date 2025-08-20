@@ -320,13 +320,15 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
         const repositoryDispatch = await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
           owner: repo.owner.login,
           repo: repo.name,
-          event_type: 'pipeline-start',
+          event_type: 'atriumn-pipeline',
           client_payload: {
+            action: 'run',
+            phase: taskPackId, // research, plan, implement, validate
             issue_number: String(issue.number),
             feature_ref: featureRef,
             task_description: taskDescription,
-            trigger_comment: comment,
-            task_pack: taskPackId
+            initiator: commentUser,
+            trigger_comment: comment
           }
         });
         
@@ -360,12 +362,53 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
     }
   }
   
-  // Check for approval triggers (these go to existing phase-approvals.yml)
-  for (const [trigger] of Object.entries(APPROVAL_TRIGGERS)) {
+  // Check for approval triggers (same dispatch pattern as tasks)
+  for (const [trigger, approvalType] of Object.entries(APPROVAL_TRIGGERS)) {
     const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
-    if (comment.match(pattern)) {
-      console.log(`Approval trigger matched: ${trigger} (handled by phase-approvals.yml)`);
-      return; // Let phase-approvals.yml handle this
+    const match = comment.match(pattern);
+    
+    if (match) {
+      // Extract phase from approval type (approve-research -> research)
+      const phase = approvalType.replace('approve-', '').replace('revise-', '');
+      console.log(`Approval trigger matched: ${trigger} -> approve ${phase}`);
+      
+      try {
+        // Send same repository_dispatch as tasks, but with action: approve
+        await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          event_type: 'atriumn-pipeline',
+          client_payload: {
+            action: 'approve',
+            phase: phase,
+            issue_number: String(issue.number),
+            feature_ref: `feature/issue-${issue.number}`,
+            initiator: commentUser,
+            trigger_comment: comment
+          }
+        });
+        
+        console.log(`Successfully dispatched approve ${phase} for issue #${issue.number}`);
+        
+        // Comment on issue to acknowledge
+        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          issue_number: issue.number,
+          body: `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} Approved**\n\nApproved by: @${commentUser}\nProcessing approval...`
+        });
+        
+        return;
+      } catch (error) {
+        console.error(`Failed to dispatch ${phase} approval:`, error);
+        
+        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          issue_number: issue.number,
+          body: `❌ **Failed to process approval**\n\nError: ${error.message}`
+        });
+      }
     }
   }
 });
