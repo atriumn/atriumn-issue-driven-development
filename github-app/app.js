@@ -320,7 +320,7 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
         const repositoryDispatch = await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
           owner: repo.owner.login,
           repo: repo.name,
-          event_type: 'atriumn-pipeline',
+          event_type: 'atriumn.pipeline',
           client_payload: {
             action: 'run',
             phase: taskPackId, // research, plan, implement, validate
@@ -377,7 +377,7 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
         await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
           owner: repo.owner.login,
           repo: repo.name,
-          event_type: 'atriumn-pipeline',
+          event_type: 'atriumn.pipeline',
           client_payload: {
             action: 'approve',
             phase: phase,
