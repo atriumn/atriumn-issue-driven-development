@@ -264,153 +264,33 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
   }
   const octokit = await app.getInstallationOctokit(installationId);
   
-  // Check for task pack triggers (e.g., "/research description")
-  for (const [trigger, taskPackId] of Object.entries(TASK_PACK_TRIGGERS)) {
-    const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
-    const match = comment.match(pattern);
-    
-    if (match) {
-      // Use provided description or generate from issue context
-      const taskDescription = match[1] || `${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} phase for: "${issue.title}"
+  // Check for Atriumn commands and provide neutral acknowledgement only
+  const isAtriumnCommand = /^\/atriumn-(research|plan|implement|validate|approve-(research|plan|implement|validate))/.test(comment.trim());
+  
+  if (isAtriumnCommand) {
+    try {
+      // DO NOT dispatch, DO NOT re-post a slash command
+      // Just a neutral acknowledgement so users "see" the App
+      await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+        owner: repo.owner.login,
+        repo: repo.name,
+        issue_number: issue.number,
+        body: '✅ Atriumn: command received. The pipeline will run shortly.'
+      });
       
-Context from issue description:
-${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' : '') : 'No additional context provided'}`;
-      console.log(`Task pack trigger matched: ${trigger} -> ${taskPackId}`);
-      console.log(`Task description: ${taskDescription}`);
+      console.log(`Atriumn command acknowledged for issue #${issue.number}: ${comment.trim()}`);
       
-      try {
-        const featureRef = `feature/issue-${issue.number}`;
-        
-        // Create feature branch from develop if it doesn't exist
-        try {
-          // Check if branch exists
-          await octokit.request('GET /repos/{owner}/{repo}/git/ref/{ref}', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            ref: `heads/${featureRef}`
-          });
-          console.log(`Branch ${featureRef} already exists`);
-        } catch (error) {
-          if (error.status === 404) {
-            // Branch doesn't exist, create it
-            console.log(`Creating branch ${featureRef} from develop`);
-            
-            // Get develop branch SHA
-            const developRef = await octokit.request('GET /repos/{owner}/{repo}/git/ref/{ref}', {
-              owner: repo.owner.login,
-              repo: repo.name,
-              ref: 'heads/develop'
-            });
-            
-            // Create new branch
-            await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
-              owner: repo.owner.login,
-              repo: repo.name,
-              ref: `refs/heads/${featureRef}`,
-              sha: developRef.data.object.sha
-            });
-            
-            console.log(`Successfully created branch ${featureRef}`);
-          } else {
-            throw error;
-          }
-        }
-        
-        // Send repository_dispatch to consumer repo's atriumn-pipeline.yml
-        const repositoryDispatch = await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          event_type: 'atriumn.pipeline',
-          client_payload: {
-            action: 'run',
-            phase: taskPackId, // research, plan, implement, validate
-            issue_number: String(issue.number),
-            feature_ref: featureRef,
-            task_description: taskDescription,
-            initiator: commentUser,
-            trigger_comment: comment
-          }
-        });
-        
-        console.log(`Successfully dispatched ${taskPackId} task pack for issue #${issue.number}`);
-        
-        // Create PR after workflow creates commits (async, don't wait)
-        createPRWhenReady(octokit, repo, issue, featureRef).catch(err => 
-          console.error(`Failed to create PR for ${featureRef}:`, err.message)
-        );
-        
-        // Comment on issue to acknowledge
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `🤖 **${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} task started**\n\nTriggered by: ${trigger}\nBranch: \`feature/issue-${issue.number}\`\n\nWatch progress in [Actions](https://github.com/${repo.owner.login}/${repo.name}/actions)`
-        });
-        
-        return; // Only trigger once per comment
-      } catch (error) {
-        console.error(`Failed to dispatch ${taskPackId} task pack:`, error);
-        
-        // Comment on issue about error
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `❌ **Failed to start ${taskPackId} task**\n\nError: ${error.message}\n\nPlease check the GitHub App configuration.`
-        });
-      }
+      // IMPORTANT: stop here.
+      // Do NOT call repository_dispatch.
+      // Do NOT post another slash command.
+      return;
+    } catch (error) {
+      console.error(`Failed to acknowledge Atriumn command:`, error);
     }
   }
   
-  // Check for approval triggers (same dispatch pattern as tasks)
-  for (const [trigger, approvalType] of Object.entries(APPROVAL_TRIGGERS)) {
-    const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
-    const match = comment.match(pattern);
-    
-    if (match) {
-      // Extract phase from approval type (approve-research -> research)
-      const phase = approvalType.replace('approve-', '').replace('revise-', '');
-      console.log(`Approval trigger matched: ${trigger} -> approve ${phase}`);
-      
-      try {
-        // Send same repository_dispatch as tasks, but with action: approve
-        await octokit.request('POST /repos/{owner}/{repo}/dispatches', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          event_type: 'atriumn.pipeline',
-          client_payload: {
-            action: 'approve',
-            phase: phase,
-            issue_number: String(issue.number),
-            feature_ref: `feature/issue-${issue.number}`,
-            initiator: commentUser,
-            trigger_comment: comment
-          }
-        });
-        
-        console.log(`Successfully dispatched approve ${phase} for issue #${issue.number}`);
-        
-        // Comment on issue to acknowledge
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} Approved**\n\nApproved by: @${commentUser}\nProcessing approval...`
-        });
-        
-        return;
-      } catch (error) {
-        console.error(`Failed to dispatch ${phase} approval:`, error);
-        
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `❌ **Failed to process approval**\n\nError: ${error.message}`
-        });
-      }
-    }
-  }
+  // All Atriumn commands are now handled above with neutral acknowledgement only
+  // No additional approval logic needed - the consumer workflow handles all phases
 });
 
 // Health check endpoint

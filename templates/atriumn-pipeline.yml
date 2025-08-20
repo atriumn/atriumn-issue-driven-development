@@ -1,0 +1,117 @@
+name: Atriumn Pipeline (Issue Comment)
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+jobs:
+  run-research:
+    if: contains(github.event.comment.body, '/atriumn-research')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit # pragma: allowlist secret
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           run
+      phase:            research
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-research
+
+  run-plan:
+    if: contains(github.event.comment.body, '/atriumn-plan')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           run
+      phase:            plan
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-plan
+
+  run-implement:
+    if: contains(github.event.comment.body, '/atriumn-implement')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           run
+      phase:            implement
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-implement
+
+  run-validate:
+    if: contains(github.event.comment.body, '/atriumn-validate')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           run
+      phase:            validate
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-validate
+
+  approve-research:
+    if: contains(github.event.comment.body, '/atriumn-approve-research')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           approve
+      phase:            research
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-approve-research
+
+  approve-plan:
+    if: contains(github.event.comment.body, '/atriumn-approve-plan')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           approve
+      phase:            plan
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-approve-plan
+
+  approve-implement:
+    if: contains(github.event.comment.body, '/atriumn-approve-implement')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           approve
+      phase:            implement
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-approve-implement
+
+  approve-validate:
+    if: contains(github.event.comment.body, '/atriumn-approve-validate')
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name:        ${{ github.repository }}
+      issue_number:     ${{ github.event.issue.number }}
+      feature_ref:      feature/issue-${{ github.event.issue.number }}
+      action:           approve
+      phase:            validate
+      task_description: ${{ github.event.issue.title }} — ${{ github.event.issue.body }}
+      trigger_comment:  /atriumn-approve-validate
