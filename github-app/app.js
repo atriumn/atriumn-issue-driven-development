@@ -374,9 +374,18 @@ if (require.main === module) {
       try {
         const installationId = 81630447; // Your installation ID
         const octokit = await app.getInstallationOctokit(installationId);
-        await setupWorkflowTest(octokit, 'atriumn', 'curatefor.me');
+        
+        // Test PR creation directly - try without draft first
+        const testPR = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
+          owner: 'atriumn',
+          repo: 'curatefor.me',
+          title: 'Test PR from GitHub App',
+          head: 'atriumn:feature/issue-97',
+          base: 'develop',
+          body: 'Testing GitHub App PR creation'
+        });
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: 'Workflow setup completed' }));
+        res.end(JSON.stringify({ success: true, message: 'PR created', pr: testPR.data.number }));
       } catch (error) {
         console.error('Test setup error:', error);
         res.writeHead(500, { 'Content-Type': 'application/json' });
