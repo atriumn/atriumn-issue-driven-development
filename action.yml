@@ -50,7 +50,6 @@ runs:
             }
           });
           core.setOutput('check_id', check.id);
-      shell: bash
 
     - name: Checkout Code
       uses: actions/checkout@v4
@@ -146,7 +145,6 @@ runs:
               summary: `The AI agent successfully completed the ${phase} phase. The generated artifacts have been committed. Please review the changes in the PR and provide your approval to proceed to the next phase.`
             }
           });
-      shell: bash
 
     - name: 'Update Status Check: Failure'
       if: failure()
@@ -167,4 +165,3 @@ runs:
               summary: `The AI agent encountered an error during the ${phase} phase. Please check the workflow logs for details.`
             }
           });
-      shell: bash
