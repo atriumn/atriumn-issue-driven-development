@@ -230,13 +230,7 @@ jobs:
             const researchUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/research/issue-${issueNumber}.md`;
             const decisionUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/decisions/issue-${issueNumber}.md`;
             
-            const body = `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} completed**
-
-📋 **Generated Files:**
-- [Research Document](${researchUrl})
-- [Decision Record](${decisionUrl})
-
-🌿 **Branch:** [\`${featureRef}\`](https://github.com/${owner}/${repo}/tree/${featureRef})`;
+            const body = `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} completed**\n\n📋 **Generated Files:**\n- [Research Document](${researchUrl})\n- [Decision Record](${decisionUrl})\n\n🌿 **Branch:** [\`${featureRef}\`](https://github.com/${owner}/${repo}/tree/${featureRef})`;
 
             await github.rest.issues.createComment({
               owner,
