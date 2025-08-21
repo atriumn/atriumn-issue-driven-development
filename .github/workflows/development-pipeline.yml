@@ -151,7 +151,60 @@ jobs:
           test -s "thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md" \
             || (echo "Expected decision record missing or empty" && exit 1)
 
-      - name: Commit & push any files Claude wrote
+      - name: Stash generated files from Claude branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/atriumn_out"
+          # copy only what we want to commit
+          rsync -a --delete thoughts/shared/ "$RUNNER_TEMP/atriumn_out/shared/"
+
+      - name: Switch to target feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ inputs.feature_ref }}"
+          git fetch origin "$TARGET" || true
+          # create or reset local branch to remote if it exists; otherwise start new
+          if git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
+            git checkout -B "$TARGET" "origin/$TARGET"
+          else
+            git checkout -B "$TARGET"
+          fi
+
+      - name: Restore generated files onto target branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p thoughts/shared
+          rsync -a "$RUNNER_TEMP/atriumn_out/shared/" "thoughts/shared/"
+
+      - name: Ignore _shared working dir
+        shell: bash
+        run: |
+          echo "/_shared" >> .git/info/exclude
+
+      - name: Ensure _shared/ is not staged
+        shell: bash
+        run: |
+          git restore --staged _shared || true
+
+      - name: Commit & push artifacts to target branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "atriumn-bot"
+          git config user.email "bot@atriumn.dev"
+          # only add the thoughts directory (avoid picking up anything else)
+          git add thoughts/
+          if ! git diff --cached --quiet; then
+            git commit -m "Atriumn ${{ inputs.phase }} artifacts for issue #${{ inputs.issue_number }}"
+            git push origin "${{ inputs.feature_ref }}"
+          else
+            echo "No changes to commit."
+          fi
+
+      - name: Legacy commit step (unused but kept for compatibility)
         if: always()
         shell: bash
         run: |
