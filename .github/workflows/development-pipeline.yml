@@ -171,6 +171,15 @@ jobs:
           # copy only what we want to commit
           rsync -a --delete thoughts/shared/ "$RUNNER_TEMP/atriumn_out/shared/"
 
+      - name: Clean working directory before branch switch
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Stash any uncommitted changes and remove untracked files
+          git add -A || true
+          git stash --include-untracked || true
+          git clean -fd || true
+
       - name: Switch to target feature branch
         shell: bash
         run: |
