@@ -1,15 +1,9 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "github-app/app.js",
-      "use": "@vercel/node"
+  "functions": {
+    "api/webhook.js": {
+      "runtime": "@vercel/node@20",
+      "includeFiles": "github-app/**"
     }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/webhook",
-      "destination": "/github-app/app.js"
-    }
-  ]
+  }
 }
