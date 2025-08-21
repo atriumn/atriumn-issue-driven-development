@@ -80,6 +80,7 @@ jobs:
           path: _shared
 
       - name: Load task-pack prompt for phase
+        if: ${{ inputs.action == 'run' }}
         id: load_prompt
         uses: actions/github-script@v7
         env:
