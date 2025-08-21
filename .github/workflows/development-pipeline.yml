@@ -105,14 +105,12 @@ jobs:
                 'validate': 'complete'
               }[phase] || 'complete';
               
-              const approvalPrompt = \`# Human Approval Received
-
-Update the decision record to mark \${phase} as approved and trigger \${nextPhase}.
-
-## Task
-1. Read: thoughts/shared/decisions/issue-\\\${issue_number}.md
-2. Update it to mark \${phase} as "approved" with timestamp  
-3. Post comment with next command: /atriumn-\${nextPhase}\`;
+              const approvalPrompt = '# Human Approval Received\n\n' +
+                'Update the decision record to mark ' + phase + ' as approved and trigger ' + nextPhase + '.\n\n' +
+                '## Task\n' +
+                '1. Read: thoughts/shared/decisions/issue-${issue_number}.md\n' +
+                '2. Update it to mark ' + phase + ' as "approved" with timestamp\n' +
+                '3. Post comment with next command: /atriumn-' + nextPhase;
               
               core.setOutput('prompt', approvalPrompt);
               return;
