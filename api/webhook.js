@@ -210,6 +210,19 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
           'plan': 'implement', 
           'implement': 'validate' 
         };
+        
+        // If no phase found, check if we should start from research
+        if (!currentPhase) {
+          console.log('No completed phases found, cannot determine next phase');
+          await octokit.issues.createComment({ 
+            owner, 
+            repo: repoName, 
+            issue_number: pr.number, 
+            body: '⚠️ Could not determine the current phase from check runs. Please trigger the next phase manually or check the workflow status.' 
+          });
+          return res.status(200).json({ status: 'error', message: 'No completed phases found' });
+        }
+        
         const nextPhase = phaseProgression[currentPhase];
         
         if (!nextPhase) {
