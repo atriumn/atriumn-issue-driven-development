@@ -204,6 +204,35 @@ jobs:
             echo "No changes to commit."
           fi
 
+      - name: Post completion comment with file links
+        if: ${{ inputs.phase == 'research' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issueNumber = '${{ inputs.issue_number }}';
+            const featureRef = '${{ inputs.feature_ref }}';
+            const phase = '${{ inputs.phase }}';
+            
+            const researchUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/research/issue-${issueNumber}.md`;
+            const decisionUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/decisions/issue-${issueNumber}.md`;
+            
+            const body = `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} completed**
+
+📋 **Generated Files:**
+- [Research Document](${researchUrl})
+- [Decision Record](${decisionUrl})
+
+🌿 **Branch:** [\`${featureRef}\`](https://github.com/${owner}/${repo}/tree/${featureRef})`;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: parseInt(issueNumber),
+              body
+            });
+
       - name: Legacy commit step (unused but kept for compatibility)
         if: always()
         shell: bash
