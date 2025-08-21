@@ -373,11 +373,18 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
       console.log(`Approval trigger matched: ${trigger} -> ${approvalType}`);
       
       try {
-        // Dispatch to workflow (same pattern as research)
-        await dispatchWorkflow(octokit, repo, issue, approvalType, comment, commentUser);
+        // Post status comment (same pattern as research) - workflow will handle the rest
+        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          issue_number: issue.number,
+          body: `🤖 **${phase.charAt(0).toUpperCase() + phase.slice(1)} approval started**\n\nTriggered by: ${trigger}\n\nWatch progress in [Actions](https://github.com/${repo.owner.login}/${repo.name}/actions)`
+        });
+        
+        console.log(`Approval status posted for ${approvalType} - workflow will be triggered by user's comment`);
         return;
       } catch (error) {
-        console.error(`Failed to dispatch ${approvalType}:`, error);
+        console.error(`Failed to process ${approvalType}:`, error);
         
         await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
           owner: repo.owner.login,
