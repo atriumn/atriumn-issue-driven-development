@@ -5,32 +5,43 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  console.log('Webhook received:', req.headers['x-github-event']);
+  
   try {
-    // Load the app (with proper path resolution)
+    // Import dependencies
     const path = require('path');
-    const appPath = path.join(__dirname, '..', 'github-app', 'app.js');
     
-    // Set NODE_PATH to find dependencies
-    process.env.NODE_PATH = path.join(__dirname, '..', 'github-app', 'node_modules');
-    require('module').Module._initPaths();
+    // Add github-app/node_modules to the module search path
+    const Module = require('module');
+    const originalResolveFilename = Module._resolveFilename;
+    Module._resolveFilename = function (request, parent, isMain) {
+      try {
+        return originalResolveFilename(request, parent, isMain);
+      } catch (e) {
+        const githubAppModules = path.join(__dirname, '..', 'github-app', 'node_modules');
+        return originalResolveFilename(request, {
+          ...parent,
+          paths: (parent.paths || []).concat([githubAppModules])
+        }, isMain);
+      }
+    };
     
-    // Load environment variables
-    require('dotenv').config({ path: path.join(__dirname, '..', 'github-app', '.env') });
+    // Load the main app
+    const app = require('../github-app/app');
+    const { createNodeMiddleware } = require('@octokit/webhooks');
     
-    // Load the GitHub App
-    const app = require(appPath);
-    const { createNodeMiddleware } = require(path.join(__dirname, '..', 'github-app', 'node_modules', '@octokit', 'webhooks'));
-    
-    // Create the middleware
+    // Create and execute the middleware
     const middleware = createNodeMiddleware(app.webhooks);
+    return await middleware(req, res);
     
-    // Handle the request
-    return middleware(req, res);
   } catch (error) {
-    console.error('Webhook handler error:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
+    console.error('Webhook processing error:', error);
+    
+    // Return success anyway to prevent GitHub from retrying
+    return res.status(200).json({ 
+      status: 'accepted',
+      error: error.message,
+      note: 'Error logged but returning 200 to prevent retries'
     });
   }
 };

@@ -38,16 +38,20 @@ async function createOnboardingPR(octokit, owner, repo) {
         const templateDir = path.join(__dirname, '..', 'templates', 'pipeline');
         const filesToAdd = await getTemplateFiles(templateDir);
         
-        for (const file of filesToAdd) {
+        // Process files in parallel for better performance
+        const filePromises = filesToAdd.map(async (file) => {
             const content = await file.content;
-            await octokit.repos.createOrUpdateFileContents({
+            return octokit.repos.createOrUpdateFileContents({
                 owner, repo, path: file.path,
                 message: `feat: Add Atriumn pipeline file - ${file.path}`,
                 content: Buffer.from(content).toString('base64'),
                 branch: setupBranch
+            }).then(() => {
+                console.log(`Added file: ${file.path}`);
             });
-            console.log(`Added file: ${file.path}`);
-        }
+        });
+        
+        await Promise.all(filePromises);
 
         const prTitle = '🚀 Configure Atriumn Issue-Driven Development';
         const prBody = `Welcome to Atriumn! Merge this pull request to install the self-contained AI development pipeline.
