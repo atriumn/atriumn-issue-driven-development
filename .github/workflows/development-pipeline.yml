@@ -98,8 +98,8 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token:            ${{ secrets.GITHUB_TOKEN }}
-
+          # NO github_token - this should prevent git operations
+          
           # DO NOT set mode: "direct" (that error you saw).
           # We are invoking with a direct_prompt, which this action supports on issue_comment-triggered runs.
           allowed_tools: |
