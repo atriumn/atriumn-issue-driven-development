@@ -81,3 +81,6 @@ yarn-error.log*
 # Temporary folders
 tmp/
 temp/
+
+# Vercel project linking file
+.vercel
