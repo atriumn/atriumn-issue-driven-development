@@ -1,4 +1,10 @@
 // This file tests the app's orchestration logic in a controlled, offline environment.
+
+// Mock environment variables before importing the app
+process.env.GITHUB_APP_ID = '12345';
+process.env.GITHUB_PRIVATE_KEY = '-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA1234567890ABCDEF\n-----END RSA PRIVATE KEY-----';
+process.env.GITHUB_WEBHOOK_SECRET = 'test-webhook-secret';
+
 const myApp = require('./app');
 
 // Mock the entire octokit instance
