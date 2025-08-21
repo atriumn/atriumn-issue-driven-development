@@ -373,7 +373,7 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
       console.log(`Approval trigger matched: ${trigger} -> ${approvalType}`);
       
       try {
-        // Just post the next phase trigger - that's it!
+        // Post next phase trigger comment (silent approval)
         const nextPhase = {
           'research': 'plan',
           'plan': 'implement', 
