@@ -1,0 +1,165 @@
+name: 'Atriumn Pipeline Runner'
+description: 'Runs the Atriumn AI-driven development pipeline phases'
+author: 'Atriumn'
+
+inputs:
+  phase:
+    description: 'Pipeline phase to run (research, plan, implement, validate)'
+    required: true
+  issue_number:
+    description: 'Issue number'
+    required: true
+  pr_number:
+    description: 'Pull request number'
+    required: true
+  head_sha:
+    description: 'SHA of the commit to run checks against'
+    required: true
+  task_description:
+    description: 'Task description for the AI'
+    required: false
+  claude_code_oauth_token:
+    description: 'Claude Code OAuth token'
+    required: true
+  github_token:
+    description: 'GitHub token'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Create Status Check: In Progress'
+      id: create_check
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const phase = '${{ inputs.phase }}';
+          const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+          const checkName = `Atriumn Phase: ${phaseTitle}`;
+
+          const { data: check } = await github.rest.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: checkName,
+            head_sha: '${{ inputs.head_sha }}',
+            status: 'in_progress',
+            output: {
+              title: `Running ${phaseTitle}`,
+              summary: `The AI agent is currently executing the ${phase} phase.`
+            }
+          });
+          core.setOutput('check_id', check.id);
+      shell: bash
+
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        ref: feature/issue-${{ inputs.issue_number }}
+        token: ${{ inputs.github_token }}
+
+    - name: Ensure output directories exist
+      run: |
+        mkdir -p thoughts/shared/{research,decisions,plans}/tmp
+      shell: bash
+
+    - name: Load task-pack prompt for phase
+      id: load_prompt
+      run: |
+        # First check if task-packs exist locally
+        if [[ -f ".atriumn/task-packs/${{ inputs.phase }}.md" ]]; then
+          PROMPT_PATH=".atriumn/task-packs/${{ inputs.phase }}.md"
+        else
+          # Fallback to fetching from the atriumn repo
+          echo "Local task-pack not found, fetching from atriumn repo..."
+          mkdir -p .atriumn/task-packs
+          curl -sSL "https://raw.githubusercontent.com/atriumn/atriumn-issue-driven-development/main/templates/pipeline/.atriumn/task-packs/${{ inputs.phase }}.md" \
+            -o ".atriumn/task-packs/${{ inputs.phase }}.md"
+          PROMPT_PATH=".atriumn/task-packs/${{ inputs.phase }}.md"
+        fi
+        
+        if [[ ! -f "$PROMPT_PATH" ]]; then
+          echo "Missing task-pack prompt: $PROMPT_PATH" >&2
+          exit 1
+        fi
+        
+        # Read and escape the prompt for JSON embedding
+        PROMPT_CONTENT=$(cat "$PROMPT_PATH")
+        echo "prompt<<EOF" >> $GITHUB_ENV
+        echo "$PROMPT_CONTENT" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Run Claude Code Agent
+      id: claude
+      uses: anthropics/claude-code-action@beta
+      with:
+        mode: agent
+        claude_code_oauth_token: ${{ inputs.claude_code_oauth_token }}
+        github_token: ${{ inputs.github_token }}
+        timeout_minutes: 40
+        allowed_tools: "Read,Write,Edit,MultiEdit,Grep,Glob,LS,TodoWrite"
+        direct_prompt: |
+          ${{ env.prompt }}
+          ---
+          # Context variables:
+          feature_ref = "feature/issue-${{ inputs.issue_number }}"
+          issue_number = "${{ inputs.issue_number }}"
+          repository = "${{ github.repository }}"
+          task_description = "${{ inputs.task_description }}"
+          phase = "${{ inputs.phase }}"
+
+    - name: Commit & push artifacts
+      run: |
+        git config user.name "atriumn-bot"
+        git config user.email "bot@atriumn.dev"
+        git add thoughts/
+        if git diff --cached --quiet; then
+          echo "No changes to commit."
+        else
+          git commit -m "feat(${{ inputs.phase }}): AI-generated artifacts for issue #${{ inputs.issue_number }}"
+          git push origin "feature/issue-${{ inputs.issue_number }}"
+        fi
+      shell: bash
+    
+    - name: 'Update Status Check: Success'
+      if: success()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const phase = '${{ inputs.phase }}';
+          const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+          await github.rest.checks.update({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            check_run_id: ${{ steps.create_check.outputs.check_id }},
+            status: 'completed',
+            conclusion: 'success',
+            output: {
+              title: `${phaseTitle} Phase Complete!`,
+              summary: `The AI agent successfully completed the ${phase} phase. The generated artifacts have been committed. Please review the changes in the PR and provide your approval to proceed to the next phase.`
+            }
+          });
+      shell: bash
+
+    - name: 'Update Status Check: Failure'
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const phase = '${{ inputs.phase }}';
+          const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+          await github.rest.checks.update({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            check_run_id: ${{ steps.create_check.outputs.check_id }},
+            status: 'completed',
+            conclusion: 'failure',
+            output: {
+              title: `${phaseTitle} Phase Failed`,
+              summary: `The AI agent encountered an error during the ${phase} phase. Please check the workflow logs for details.`
+            }
+          });
+      shell: bash
