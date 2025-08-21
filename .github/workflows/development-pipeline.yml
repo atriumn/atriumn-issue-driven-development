@@ -1,7 +1,7 @@
 name: Atriumn Reusable Pipeline
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       repo_name:
         required: true
@@ -17,10 +17,15 @@ on:
         type: string
       phase:
         required: true
-        type: string # "research" | "plan" | "implement" | "validate"
+        type: string
       task_description:
         required: false
         type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
 
 permissions:
   contents: write
