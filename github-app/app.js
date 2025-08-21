@@ -369,43 +369,21 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
     const match = comment.match(pattern);
     
     if (match) {
-      // Extract phase from approval type (approve-research -> research)
       const phase = approvalType.replace('approve-', '').replace('revise-', '');
-      console.log(`Approval trigger matched: ${trigger} -> approve ${phase}`);
+      console.log(`Approval trigger matched: ${trigger} -> ${approvalType}`);
       
       try {
-        // Handle approval: update decision record and trigger next phase
-        const featureRef = `feature/issue-${issue.number}`;
-        const nextPhase = {
-          'research': 'plan',
-          'plan': 'implement', 
-          'implement': 'validate',
-          'validate': 'complete'
-        }[phase] || 'complete';
-        
-        console.log(`Processing approval for ${phase}, next phase: ${nextPhase}`);
-        
-        // Auto-trigger next phase if not complete
-        if (nextPhase !== 'complete') {
-          await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            issue_number: issue.number,
-            body: `/atriumn-${nextPhase}`
-          });
-        }
-        
-        console.log(`Approval complete: ${phase} -> ${nextPhase}`);
-        
+        // Dispatch to workflow (same pattern as research)
+        await dispatchWorkflow(octokit, repo, issue, approvalType, comment, commentUser);
         return;
       } catch (error) {
-        console.error(`Failed to dispatch ${phase} approval:`, error);
+        console.error(`Failed to dispatch ${approvalType}:`, error);
         
         await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
           owner: repo.owner.login,
           repo: repo.name,
           issue_number: issue.number,
-          body: `❌ **Failed to process approval**\n\nError: ${error.message}`
+          body: `❌ **Failed to process ${approvalType}**\n\nError: ${error.message}`
         });
       }
     }
