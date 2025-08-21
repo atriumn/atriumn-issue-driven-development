@@ -34,33 +34,23 @@ jobs:
         # Add the --coverage flag to generate a report
         run: npm test -- --coverage
 
-      - name: Enforce Code Coverage
-        run: |
-          # This simple script uses grep to find the total statement coverage percentage
-          # from the text summary report and checks if it meets the threshold.
-          # For a more advanced setup, you could use a dedicated GitHub Action.
-          
-          # Extract the percentage for the "All files" statement coverage
-          COVERAGE=$(cat ./coverage/text-summary.txt | grep Statements | awk '{print $3}' | sed 's/%//')
-          
-          echo "Current statement coverage is ${COVERAGE}%"
-          
-          # Check if coverage is below 80% (using bc for floating point comparison)
-          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-            echo "::error::Code coverage is ${COVERAGE}%, which is below the 80% threshold."
-            exit 1
-          else
-            echo "✅ Code coverage is sufficient."
-          fi
+      # Coverage enforcement is handled automatically by Jest via coverageThreshold in package.json
+      # The test step above will fail if coverage is below 80% for any metric (statements, branches, functions, lines)
 
       # --- Vercel Deployment Steps ---
       - name: Install Vercel CLI
         run: npm install -g vercel
 
       - name: Pull Vercel Project Information
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel pull --yes --environment=${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }} --token=${{ secrets.VERCEL_TOKEN }}
         
       - name: Build Project Artifacts
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel build ${{ github.ref == 'refs/heads/main' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy Project Artifacts to Vercel
