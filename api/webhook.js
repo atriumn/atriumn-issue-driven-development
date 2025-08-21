@@ -41,7 +41,8 @@ module.exports = async (req, res) => {
     }
 
     const event = req.headers['x-github-event'];
-    console.log('Webhook received:', event);
+    const action = req.body.action;
+    console.log(`Webhook received: event=${event}, action=${action}`);
 
     // Handle installation.created event
     if (event === 'installation' && req.body.action === 'created') {
@@ -157,7 +158,14 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
     }
 
     // Handle pull_request_review.submitted event for phase progression
-    if (event === 'pull_request_review' && req.body.action === 'submitted') {
+    if (event === 'pull_request_review') {
+      console.log(`Pull request review event: action=${req.body.action}, state=${req.body.review?.state}, PR=#${req.body.pull_request?.number}`);
+      
+      if (req.body.action !== 'submitted') {
+        console.log('Review action is not submitted, ignoring');
+        return res.status(200).json({ status: 'ignored', reason: 'not submitted action' });
+      }
+      
       if (req.body.review.state !== 'approved') {
         console.log('Review is not an approval, ignoring');
         return res.status(200).json({ status: 'ignored', reason: 'not an approval' });
@@ -167,7 +175,7 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
       const owner = repository.owner.login;
       const repoName = repository.name;
       
-      console.log(`Received approval on PR #${pr.number}`);
+      console.log(`Processing approval on PR #${pr.number} in ${owner}/${repoName}`);
       
       try {
         // Import Octokit
@@ -419,9 +427,12 @@ The **research** phase is now in progress. Watch for status updates on the PR.`
       }
     }
 
+    console.log(`Unhandled event combination: event=${event}, action=${action}`);
+    
     return res.status(200).json({ 
       status: 'accepted',
       event: event,
+      action: action,
       timestamp: new Date().toISOString()
     });
     
