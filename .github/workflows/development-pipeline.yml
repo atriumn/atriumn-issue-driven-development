@@ -63,6 +63,15 @@ jobs:
           fi
           git status
 
+      - name: Ensure output directories exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p thoughts/shared/research
+          mkdir -p thoughts/shared/research/tmp
+          mkdir -p thoughts/shared/decisions
+          mkdir -p thoughts/shared/plans
+
       - name: Checkout shared repo (to load task-packs)
         uses: actions/checkout@v4
         with:
@@ -99,6 +108,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Agent mode with budget
+          mode: agent
+          timeout_minutes: 40
+          max_turns: 40
+          
           allowed_tools: |
             Read
             Write
@@ -127,6 +142,16 @@ jobs:
             phase = "${{ inputs.phase }}"
             action = "${{ inputs.action }}"
             trigger_comment = "${{ inputs.trigger_comment }}"
+
+      - name: Assert research artifacts exist (research phase only)
+        if: ${{ inputs.phase == 'research' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "thoughts/shared/research/issue-${{ inputs.issue_number }}.md" \
+            || (echo "Expected research output missing or empty" && exit 1)
+          test -s "thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md" \
+            || (echo "Expected decision record missing or empty" && exit 1)
 
       - name: Commit & push any files Claude wrote
         if: always()
