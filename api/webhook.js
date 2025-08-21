@@ -169,6 +169,126 @@ By merging this, your repository will be fully equipped to run the pipeline with
       }
     }
 
+    // Handle pull_request_review.submitted event for phase progression
+    if (event === 'pull_request_review' && req.body.action === 'submitted') {
+      if (req.body.review.state !== 'approved') {
+        console.log('Review is not an approval, ignoring');
+        return res.status(200).json({ status: 'ignored', reason: 'not an approval' });
+      }
+
+      const { pull_request: pr, repository } = req.body;
+      const owner = repository.owner.login;
+      const repoName = repository.name;
+      
+      console.log(`Received approval on PR #${pr.number}`);
+      
+      try {
+        // Import Octokit
+        const { Octokit } = await import('@octokit/rest');
+        const { createAppAuth } = await import('@octokit/auth-app');
+        
+        const octokit = new Octokit({
+          authStrategy: createAppAuth,
+          auth: {
+            appId: process.env.GITHUB_APP_ID,
+            privateKey: process.env.GITHUB_PRIVATE_KEY,
+            installationId: req.body.installation.id,
+          },
+        });
+        
+        // Determine current phase from checks
+        const { data: { check_runs } } = await octokit.checks.listForRef({ 
+          owner, 
+          repo: repoName, 
+          ref: pr.head.sha 
+        });
+        
+        const phaseOrder = ['validate', 'implement', 'plan', 'research'];
+        let currentPhase = null;
+        
+        for (const phase of phaseOrder) {
+          const checkName = `Atriumn Phase: ${phase.charAt(0).toUpperCase() + phase.slice(1)}`;
+          const check = check_runs.find(run => run.name === checkName && run.conclusion === 'success');
+          if (check) {
+            currentPhase = phase;
+            console.log(`Found last successful phase: ${phase}`);
+            break;
+          }
+        }
+        
+        // Determine next phase
+        const phaseProgression = { 
+          'research': 'plan', 
+          'plan': 'implement', 
+          'implement': 'validate' 
+        };
+        const nextPhase = phaseProgression[currentPhase];
+        
+        if (!nextPhase) {
+          if (currentPhase === 'validate') {
+            await octokit.issues.createComment({ 
+              owner, 
+              repo: repoName, 
+              issue_number: pr.number, 
+              body: '✅ All phases are complete and approved. This PR is ready for final review and merge.' 
+            });
+          }
+          return res.status(200).json({ status: 'complete', phase: currentPhase });
+        }
+        
+        // Extract issue number from PR body
+        const issueNumberMatch = pr.body.match(/Closes #(\d+)|Issue #(\d+)/);
+        if (!issueNumberMatch) {
+          throw new Error("Could not find a linked issue number in the PR body.");
+        }
+        const issueNumber = issueNumberMatch[1] || issueNumberMatch[2];
+        
+        // Trigger next phase
+        await octokit.actions.createWorkflowDispatch({
+          owner, 
+          repo: repoName, 
+          workflow_id: 'development-pipeline.yml', 
+          ref: pr.head.ref,
+          inputs: {
+            phase: nextPhase, 
+            issue_number: issueNumber, 
+            pr_number: pr.number.toString(),
+            head_sha: pr.head.sha, 
+            task_description: pr.title
+          },
+        });
+        
+        await octokit.issues.createComment({ 
+          owner, 
+          repo: repoName, 
+          issue_number: pr.number, 
+          body: `🚀 Approval received! Kicking off the **${nextPhase}** phase.` 
+        });
+        
+      } catch (error) {
+        console.error('Failed to process PR approval:', error);
+        
+        const { Octokit } = await import('@octokit/rest');
+        const { createAppAuth } = await import('@octokit/auth-app');
+        
+        const octokit = new Octokit({
+          authStrategy: createAppAuth,
+          auth: {
+            appId: process.env.GITHUB_APP_ID,
+            privateKey: process.env.GITHUB_PRIVATE_KEY,
+            installationId: req.body.installation.id,
+          },
+        });
+        
+        await octokit.issues.createComment({ 
+          owner, 
+          repo: repoName, 
+          issue_number: pr.number, 
+          body: `❌ **Error processing approval:**\n\`\`\`\n${error.message}\n\`\`\`` 
+        });
+      }
+    }
+
     // Handle issue_comment.created event  
     if (event === 'issue_comment' && req.body.action === 'created') {
       const { issue, comment, repository } = req.body;
