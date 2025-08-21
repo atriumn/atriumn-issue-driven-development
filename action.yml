@@ -66,16 +66,21 @@ runs:
     - name: Load task-pack prompt for phase
       id: load_prompt
       run: |
-        # First check if task-packs exist locally
+        # Check for local override first
         if [[ -f ".atriumn/task-packs/${{ inputs.phase }}.md" ]]; then
+          echo "Using local task-pack override for ${{ inputs.phase }}"
           PROMPT_PATH=".atriumn/task-packs/${{ inputs.phase }}.md"
         else
-          # Fallback to fetching from the atriumn repo
-          echo "Local task-pack not found, fetching from atriumn repo..."
-          mkdir -p .atriumn/task-packs
+          # Fetch from central repository (default behavior)
+          echo "Fetching latest ${{ inputs.phase }} task-pack from Atriumn..."
+          TEMP_DIR=$(mktemp -d)
+          PROMPT_PATH="$TEMP_DIR/${{ inputs.phase }}.md"
+          
           curl -sSL "https://raw.githubusercontent.com/atriumn/atriumn-issue-driven-development/main/templates/pipeline/.atriumn/task-packs/${{ inputs.phase }}.md" \
-            -o ".atriumn/task-packs/${{ inputs.phase }}.md"
-          PROMPT_PATH=".atriumn/task-packs/${{ inputs.phase }}.md"
+            -o "$PROMPT_PATH" || {
+              echo "Failed to fetch task-pack for phase: ${{ inputs.phase }}" >&2
+              exit 1
+            }
         fi
         
         if [[ ! -f "$PROMPT_PATH" ]]; then

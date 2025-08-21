@@ -3,12 +3,12 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 
-// Read all template files
+// Read workflow template file only
 async function getTemplateFiles() {
   const templateDir = path.join(__dirname, '..', 'templates', 'pipeline');
   const files = [];
   
-  // Read workflow file
+  // Only read the thin workflow file - no task-packs
   const workflowContent = await fs.readFile(
     path.join(templateDir, '.github', 'workflows', 'development-pipeline.yml'), 
     'utf-8'
@@ -17,20 +17,6 @@ async function getTemplateFiles() {
     path: '.github/workflows/development-pipeline.yml',
     content: workflowContent
   });
-  
-  // Read task pack files
-  const taskPackDir = path.join(templateDir, '.atriumn', 'task-packs');
-  const taskPacks = await fs.readdir(taskPackDir);
-  
-  for (const file of taskPacks) {
-    if (file.endsWith('.md')) {
-      const content = await fs.readFile(path.join(taskPackDir, file), 'utf-8');
-      files.push({
-        path: `.atriumn/task-packs/${file}`,
-        content: content
-      });
-    }
-  }
   
   return files;
 }
@@ -139,19 +125,20 @@ module.exports = async (req, res) => {
           }
           
           // Create PR
-          const prBody = `Welcome to Atriumn! Merge this pull request to install the self-contained AI development pipeline.
+          const prBody = `Welcome to Atriumn! This PR adds a lightweight workflow that connects your repository to the Atriumn AI development pipeline.
 
 **What this PR adds:**
-*   **Workflows:** The complete GitHub Actions workflow in \`.github/workflows/\`.
-*   **AI Prompts:** All necessary task packs for the AI agent in \`.atriumn/\`.
-
-By merging this, your repository will be fully equipped to run the pipeline with no external dependencies.
+*   A single workflow file that triggers the Atriumn pipeline
+*   Automatic updates when we improve the pipeline
+*   No vendor lock-in - you can customize or remove at any time
 
 **Next Steps:**
 1. Merge this PR
-2. Add the \`CLAUDE_CODE_OAUTH_TOKEN\` secret to your repository
+2. Add the \`CLAUDE_CODE_OAUTH_TOKEN\` secret to your repository (get it from [Claude Code](https://github.com/apps/claude-code))
 3. Create an issue describing what you want to build
-4. Comment \`/atriumn-research\` to start!`;
+4. Comment \`/atriumn-research\` to start the AI pipeline!
+
+The pipeline will automatically fetch the latest AI prompts and logic from the Atriumn repository, ensuring you always have the most up-to-date version.`;
 
           await octokit.pulls.create({
             owner,
