@@ -385,14 +385,6 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
         
         console.log(`Processing approval for ${phase}, next phase: ${nextPhase}`);
         
-        // Post approval acknowledgment
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} approved!**\n\nStarting next phase...`
-        });
-        
         // Auto-trigger next phase if not complete
         if (nextPhase !== 'complete') {
           await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
@@ -404,14 +396,6 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
         }
         
         console.log(`Approval complete: ${phase} -> ${nextPhase}`);
-        
-        // Comment on issue to acknowledge
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} Approved**\n\nApproved by: @${commentUser}\nProcessing approval...`
-        });
         
         return;
       } catch (error) {
