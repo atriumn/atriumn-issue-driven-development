@@ -11,11 +11,16 @@ permissions:
   actions: read
   id-token: write
 
+# Prevent duplicate runs for the same comment (retries, double delivery, etc.)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.comment.id }}
+  cancel-in-progress: true
+
 jobs:
   run-research:
-    if: contains(github.event.comment.body, '/atriumn-research')
+    if: contains(github.event.comment.body, '/atriumn-research') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
-    secrets: inherit # pragma: allowlist secret
+    secrets: inherit
     with:
       repo_name:        ${{ github.repository }}
       issue_number:     ${{ github.event.issue.number }}
@@ -26,7 +31,7 @@ jobs:
       trigger_comment:  /atriumn-research
 
   run-plan:
-    if: contains(github.event.comment.body, '/atriumn-plan')
+    if: contains(github.event.comment.body, '/atriumn-plan') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:
@@ -39,7 +44,7 @@ jobs:
       trigger_comment:  /atriumn-plan
 
   run-implement:
-    if: contains(github.event.comment.body, '/atriumn-implement')
+    if: contains(github.event.comment.body, '/atriumn-implement') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:
@@ -52,7 +57,7 @@ jobs:
       trigger_comment:  /atriumn-implement
 
   run-validate:
-    if: contains(github.event.comment.body, '/atriumn-validate')
+    if: contains(github.event.comment.body, '/atriumn-validate') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:
@@ -65,7 +70,7 @@ jobs:
       trigger_comment:  /atriumn-validate
 
   approve-research:
-    if: contains(github.event.comment.body, '/atriumn-approve-research')
+    if: contains(github.event.comment.body, '/atriumn-approve-research') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:
@@ -78,7 +83,7 @@ jobs:
       trigger_comment:  /atriumn-approve-research
 
   approve-plan:
-    if: contains(github.event.comment.body, '/atriumn-approve-plan')
+    if: contains(github.event.comment.body, '/atriumn-approve-plan') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:
@@ -91,7 +96,7 @@ jobs:
       trigger_comment:  /atriumn-approve-plan
 
   approve-implement:
-    if: contains(github.event.comment.body, '/atriumn-approve-implement')
+    if: contains(github.event.comment.body, '/atriumn-approve-implement') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:
@@ -104,7 +109,7 @@ jobs:
       trigger_comment:  /atriumn-approve-implement
 
   approve-validate:
-    if: contains(github.event.comment.body, '/atriumn-approve-validate')
+    if: contains(github.event.comment.body, '/atriumn-approve-validate') && github.actor != 'atriumn-issue-driven-development[bot]'
     uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
     secrets: inherit
     with:

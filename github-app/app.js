@@ -2,6 +2,9 @@ require('dotenv').config();
 const { App } = require('@octokit/app');
 const { createNodeMiddleware } = require('@octokit/webhooks');
 
+// Track processed comments to prevent duplicate workflow runs
+const processedComments = new Set();
+
 // GitHub App configuration
 const app = new App({
   appId: process.env.GITHUB_APP_ID,
@@ -247,14 +250,32 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
   const repo = payload.repository;
   const issue = payload.issue;
   const commentUser = payload.comment.user.login;
+  const commentId = payload.comment.id;
+  
+  const body = (comment || '').trim();
+
+  // Let the repo workflow handle /atriumn-* commands exclusively
+  if (/^\/atriumn-(research|plan|implement|validate)\b/i.test(body) ||
+      /^\/atriumn-approve-(research|plan|implement|validate)\b/i.test(body)) {
+    console.log(`Ignoring /atriumn-* command: ${body} - handled by repo workflow`);
+    return;
+  }
+  
+  // Check if we already processed this comment (prevents duplicate webhook delivery)
+  if (processedComments.has(commentId)) {
+    console.log(`Ignoring duplicate webhook for comment ID ${commentId}`);
+    return;
+  }
   
   // Ignore comments from bot accounts or automated systems
-  if (commentUser === 'github-actions[bot]' || commentUser === 'github-actions' || commentUser.includes('[bot]') || commentUser === 'atriumn-bot') {
+  if (commentUser === 'github-actions[bot]' || commentUser === 'github-actions' || commentUser.includes('[bot]') || commentUser === 'atriumn-bot' || commentUser === 'atriumn-issue-driven-development[bot]') {
     console.log(`Ignoring comment from bot user: ${commentUser}`);
     return;
   }
   
-  console.log(`Processing comment from ${commentUser}: "${comment}"`);
+  // Mark this comment as processed
+  processedComments.add(commentId);
+  console.log(`Processing comment from ${commentUser}: "${comment}" (ID: ${commentId})`);
   
   // Get installation octokit instance
   const installationId = payload.installation?.id;
@@ -316,15 +337,24 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
           }
         }
         
-        // Post the same slash command as a comment to trigger issue_comment workflow
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+        // Trigger workflow using workflow_dispatch (supported by Claude Code)
+        await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
           owner: repo.owner.login,
           repo: repo.name,
-          issue_number: issue.number,
-          body: trigger // Post the exact same trigger that will be picked up by issue_comment workflow
+          workflow_id: 'atriumn-pipeline.yml',
+          ref: 'develop',
+          inputs: {
+            action: 'run',
+            phase: taskPackId,
+            issue_number: String(issue.number),
+            feature_ref: featureRef,
+            task_description: taskDescription,
+            initiator: commentUser,
+            trigger_comment: comment
+          }
         });
         
-        console.log(`Successfully posted ${trigger} comment to trigger workflow for issue #${issue.number}`);
+        console.log(`Successfully triggered ${taskPackId} workflow for issue #${issue.number}`);
         
         // Create PR after workflow creates commits (async, don't wait)
         createPRWhenReady(octokit, repo, issue, featureRef).catch(err => 
@@ -365,15 +395,9 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
       console.log(`Approval trigger matched: ${trigger} -> approve ${phase}`);
       
       try {
-        // Post the same approval command as a comment to trigger issue_comment workflow
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: trigger // Post the exact same trigger that will be picked up by issue_comment workflow
-        });
-        
-        console.log(`Successfully posted ${trigger} comment to trigger workflow for issue #${issue.number}`);
+        // The user's approval comment already triggers the issue_comment workflow
+        // App just does GitOps - no need to trigger workflow here  
+        console.log(`Approval processed for ${phase} - workflow will be triggered by user's comment`);
         
         // Comment on issue to acknowledge
         await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
@@ -413,7 +437,7 @@ module.exports = app;
 
 // Local development server
 if (require.main === module) {
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 3002;
   const middleware = createNodeMiddleware(app.webhooks, { path: '/api/webhook' });
   
   // Add test endpoint for manual workflow creation
