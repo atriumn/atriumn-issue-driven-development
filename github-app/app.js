@@ -254,12 +254,7 @@ app.webhooks.on('issue_comment.created', async ({ payload }) => {
   
   const body = (comment || '').trim();
 
-  // Let the repo workflow handle /atriumn-* commands exclusively
-  if (/^\/atriumn-(research|plan|implement|validate)\b/i.test(body) ||
-      /^\/atriumn-approve-(research|plan|implement|validate)\b/i.test(body)) {
-    console.log(`Ignoring /atriumn-* command: ${body} - handled by repo workflow`);
-    return;
-  }
+  // Handle /atriumn-* commands: create branch and post status, but don't dispatch workflows
   
   // Check if we already processed this comment (prevents duplicate webhook delivery)
   if (processedComments.has(commentId)) {
@@ -337,24 +332,8 @@ ${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' :
           }
         }
         
-        // Trigger workflow using workflow_dispatch (supported by Claude Code)
-        await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          workflow_id: 'atriumn-pipeline.yml',
-          ref: 'develop',
-          inputs: {
-            action: 'run',
-            phase: taskPackId,
-            issue_number: String(issue.number),
-            feature_ref: featureRef,
-            task_description: taskDescription,
-            initiator: commentUser,
-            trigger_comment: comment
-          }
-        });
-        
-        console.log(`Successfully triggered ${taskPackId} workflow for issue #${issue.number}`);
+        // DON'T trigger workflow_dispatch - let consumer workflow handle via issue_comment
+        console.log(`Branch created and status posted for ${taskPackId} - workflow will be triggered by user's comment`);
         
         // Create PR after workflow creates commits (async, don't wait)
         createPRWhenReady(octokit, repo, issue, featureRef).catch(err => 

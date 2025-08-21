@@ -115,21 +115,20 @@ jobs:
           # Allow App/bot actors in case a maintainer runs this via re-runs, etc.
           allowed_bots: "*"
 
-          # Pass a fully-rendered prompt to Claude
+          # Pass a fully-rendered prompt to Claude with variables substituted
           direct_prompt: |
-            ${{ steps.load_prompt.outputs.prompt }}
-
-            ---
-            # Context variables (for the prompt to interpolate):
-            feature_ref = "${{ inputs.feature_ref }}"
-            issue_number = "${{ inputs.issue_number }}"
-            repository = "${{ inputs.repo_name }}"
-            task_description = "${{ inputs.task_description }}"
-            output_path = "thoughts/shared/research/issue-${{ inputs.issue_number }}.md"
-            decision_record_path = "thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md"
-            phase = "${{ inputs.phase }}"
-            action = "${{ inputs.action }}"
-            trigger_comment = "${{ inputs.trigger_comment }}"
+            ${{ 
+              steps.load_prompt.outputs.prompt 
+              | replace('${feature_ref}', inputs.feature_ref)
+              | replace('${issue_number}', inputs.issue_number) 
+              | replace('${repository}', inputs.repo_name)
+              | replace('${task_description}', inputs.task_description)
+              | replace('${output_path}', format('thoughts/shared/research/issue-{0}.md', inputs.issue_number))
+              | replace('${decision_record_path}', format('thoughts/shared/decisions/issue-{0}.md', inputs.issue_number))
+              | replace('${phase}', inputs.phase)
+              | replace('${action}', inputs.action)
+              | replace('${trigger_comment}', inputs.trigger_comment)
+            }}
 
       - name: Commit & push any files Claude wrote
         if: always()
