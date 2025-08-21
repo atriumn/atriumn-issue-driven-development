@@ -84,14 +84,41 @@ jobs:
         uses: actions/github-script@v7
         env:
           PHASE: ${{ inputs.phase }}
+          ACTION: ${{ inputs.action }}
         with:
           script: |
             const fs = require('fs');
             const phase = process.env.PHASE;
+            const action = process.env.ACTION;
+            
             if (!phase) {
               core.setFailed('Phase input is required');
               return;
             }
+            
+            // For approve actions, use a simple approval prompt
+            if (action === 'approve') {
+              const nextPhase = {
+                'research': 'plan',
+                'plan': 'implement', 
+                'implement': 'validate',
+                'validate': 'complete'
+              }[phase] || 'complete';
+              
+              const approvalPrompt = `# Human Approval Received
+
+Update the decision record to mark ${phase} as approved and trigger ${nextPhase}.
+
+## Task
+1. Read: thoughts/shared/decisions/issue-\${issue_number}.md
+2. Update it to mark ${phase} as "approved" with timestamp
+3. Post comment with next command: /atriumn-${nextPhase}`;
+              
+              core.setOutput('prompt', approvalPrompt);
+              return;
+            }
+            
+            // For run actions, load the task-pack
             const promptPath = `_shared/.atriumn/task-packs/${phase}.md`;
             if (!fs.existsSync(promptPath)) {
               core.setFailed(`Missing task-pack prompt: ${promptPath}`);
