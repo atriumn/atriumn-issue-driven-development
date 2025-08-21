@@ -12,9 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     
-    defaults:
-      run:
-        working-directory: ./github-app
+    # Remove defaults to run from root directory
 
     steps:
       - name: Checkout repository
@@ -28,11 +26,11 @@ jobs:
           cache-dependency-path: github-app/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: cd github-app && npm ci
 
       - name: Run unit tests
         # Add the --coverage flag to generate a report
-        run: npm test -- --coverage
+        run: cd github-app && npm test -- --coverage
 
       # Coverage enforcement is handled automatically by Jest via coverageThreshold in package.json
       # The test step above will fail if coverage is below 80% for any metric (statements, branches, functions, lines)
