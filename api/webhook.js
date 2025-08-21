@@ -193,6 +193,7 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
         const phaseOrder = ['validate', 'implement', 'plan', 'research'];
         let currentPhase = null;
         
+        // Search in reverse order to find the most recent successful phase
         for (const phase of phaseOrder) {
           const checkName = `Atriumn Phase: ${phase.charAt(0).toUpperCase() + phase.slice(1)}`;
           const check = check_runs.find(run => run.name === checkName && run.conclusion === 'success');
