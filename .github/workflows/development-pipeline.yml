@@ -96,27 +96,11 @@ jobs:
               return;
             }
             
-            // For approve actions, use a simple approval prompt
-            if (action === 'approve') {
-              const nextPhase = {
-                'research': 'plan',
-                'plan': 'implement', 
-                'implement': 'validate',
-                'validate': 'complete'
-              }[phase] || 'complete';
-              
-              const approvalPrompt = '# Human Approval Received\n\n' +
-                'Update the decision record to mark ' + phase + ' as approved and trigger ' + nextPhase + '.\n\n' +
-                '## Task\n' +
-                '1. Read: thoughts/shared/decisions/issue-${issue_number}.md\n' +
-                '2. Update it to mark ' + phase + ' as "approved" with timestamp\n' +
-                '3. Post comment with next command: /atriumn-' + nextPhase;
-              
-              core.setOutput('prompt', approvalPrompt);
+            // For run actions, load the task-pack
+            if (action !== 'run') {
+              core.setFailed('Only run actions need task-pack prompts');
               return;
             }
-            
-            // For run actions, load the task-pack
             const promptPath = `_shared/.atriumn/task-packs/${phase}.md`;
             if (!fs.existsSync(promptPath)) {
               core.setFailed(`Missing task-pack prompt: ${promptPath}`);
@@ -127,7 +111,56 @@ jobs:
 
           result-encoding: string
 
+      - name: Handle approval action (simple status update)
+        if: ${{ inputs.action == 'approve' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          # Update decision record
+          DECISION_FILE="thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md"
+          if [ -f "$DECISION_FILE" ]; then
+            # Add approval status
+            echo "" >> "$DECISION_FILE"
+            echo "## ${{ inputs.phase }} Approval" >> "$DECISION_FILE"
+            echo "- Status: ✅ Approved" >> "$DECISION_FILE"
+            echo "- Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$DECISION_FILE"
+            echo "- Trigger: ${{ inputs.trigger_comment }}" >> "$DECISION_FILE"
+          fi
+          
+          # Determine next phase
+          case "${{ inputs.phase }}" in
+            research) NEXT_PHASE="plan" ;;
+            plan) NEXT_PHASE="implement" ;;
+            implement) NEXT_PHASE="validate" ;;
+            validate) NEXT_PHASE="complete" ;;
+            *) NEXT_PHASE="complete" ;;
+          esac
+          
+          echo "NEXT_PHASE=$NEXT_PHASE" >> $GITHUB_ENV
+
+      - name: Post next phase comment (for approvals)
+        if: ${{ inputs.action == 'approve' && env.NEXT_PHASE != 'complete' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issueNumber = '${{ inputs.issue_number }}';
+            const phase = '${{ inputs.phase }}';
+            const nextPhase = process.env.NEXT_PHASE;
+            
+            const body = `✅ **${phase} approved!**\n\nStarting next phase: /atriumn-${nextPhase}`;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: parseInt(issueNumber),
+              body: `/atriumn-${nextPhase}`
+            });
+
       - name: Run Claude Code (single-session, direct prompt)
+        if: ${{ inputs.action == 'run' }}
         id: claude
         uses: anthropics/claude-code-action@beta
         with:
