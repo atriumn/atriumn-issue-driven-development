@@ -22,8 +22,6 @@ on:
         required: false
         type: string
     secrets:
-      GITHUB_TOKEN:
-        required: true
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
 
