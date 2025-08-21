@@ -99,9 +99,6 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token:            ${{ secrets.GITHUB_TOKEN }}
-          
-          # Use the feature branch we already created
-          branch: ${{ inputs.feature_ref }}
 
           # DO NOT set mode: "direct" (that error you saw).
           # We are invoking with a direct_prompt, which this action supports on issue_comment-triggered runs.
