@@ -134,6 +134,13 @@ runs:
         script: |
           const phase = '${{ inputs.phase }}';
           const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+          const nextPhase = {
+            'research': 'plan',
+            'plan': 'implement', 
+            'implement': 'validate',
+            'validate': null
+          }[phase];
+          
           await github.rest.checks.update({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -144,6 +151,32 @@ runs:
               title: `${phaseTitle} Phase Complete!`,
               summary: `The AI agent successfully completed the ${phase} phase. The generated artifacts have been committed. Please review the changes in the PR and provide your approval to proceed to the next phase.`
             }
+          });
+          
+          // Update PR description with progress
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: ${{ inputs.pr_number }}
+          });
+          
+          const phaseChecks = {
+            research: phase === 'research' || phase === 'plan' || phase === 'implement' || phase === 'validate',
+            plan: phase === 'plan' || phase === 'implement' || phase === 'validate',
+            implement: phase === 'implement' || phase === 'validate',
+            validate: phase === 'validate'
+          };
+          
+          const updatedBody = pr.body.replace(
+            /- \[[x ]\] Research\n- \[[x ]\] Plan\n- \[[x ]\] Implement\n- \[[x ]\] Validate/,
+            `- [${phaseChecks.research ? 'x' : ' '}] Research\n- [${phaseChecks.plan ? 'x' : ' '}] Plan\n- [${phaseChecks.implement ? 'x' : ' '}] Implement\n- [${phaseChecks.validate ? 'x' : ' '}] Validate`
+          );
+          
+          await github.rest.pulls.update({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: ${{ inputs.pr_number }},
+            body: updatedBody
           });
 
     - name: 'Update Status Check: Failure'
