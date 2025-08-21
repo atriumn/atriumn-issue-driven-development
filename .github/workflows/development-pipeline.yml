@@ -1,7 +1,7 @@
 name: Atriumn Reusable Pipeline
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       repo_name:
         required: true
@@ -9,19 +9,16 @@ on:
       issue_number:
         required: true
         type: string
-      feature_ref:
+      pr_number:
         required: true
         type: string
-      action:
+      head_sha:
         required: true
-        type: string   # "run" or "approve"
+        type: string
       phase:
         required: true
-        type: string   # "research" | "plan" | "implement" | "validate"
+        type: string # "research" | "plan" | "implement" | "validate"
       task_description:
-        required: false
-        type: string
-      trigger_comment:
         required: false
         type: string
 
@@ -29,48 +26,45 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  actions: read
-  id-token: write
+  checks: write
 
 jobs:
   run-phase:
     runs-on: ubuntu-latest
-
     steps:
+      - name: 'Create Status Check: In Progress'
+        id: create_check
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const phase = '${{ inputs.phase }}';
+            const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+            const checkName = `Atriumn Phase: ${phaseTitle}`;
+
+            const { data: check } = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: checkName,
+              head_sha: '${{ inputs.head_sha }}',
+              status: 'in_progress',
+              output: {
+                title: `Running ${phaseTitle}`,
+                summary: 'The AI agent is currently executing the ${phase} phase.'
+              }
+            });
+            return check.id;
+
       - name: Checkout consumer repo
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo_name }}
-          ref: ${{ inputs.feature_ref }}
+          ref: feature/issue-${{ inputs.issue_number }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Ensure feature branch exists (create if missing)
-        shell: bash
-        run: |
-          set -euo pipefail
-          BR="${{ inputs.feature_ref }}"
-          if ! git rev-parse --verify --quiet "$BR"; then
-            git fetch origin "${BR}" || true
-            if ! git rev-parse --verify --quiet "origin/${BR}"; then
-              # create from default branch
-              DEFAULT_BRANCH="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
-              git checkout -b "$BR" "origin/${DEFAULT_BRANCH}"
-            else
-              git checkout -b "$BR" "origin/${BR}"
-            fi
-          else
-            git checkout "$BR"
-          fi
-          git status
-
       - name: Ensure output directories exist
-        shell: bash
         run: |
-          set -euo pipefail
-          mkdir -p thoughts/shared/research
-          mkdir -p thoughts/shared/research/tmp
-          mkdir -p thoughts/shared/decisions
-          mkdir -p thoughts/shared/plans
+          mkdir -p thoughts/shared/{research,decisions,plans}/tmp
 
       - name: Checkout shared repo (to load task-packs)
         uses: actions/checkout@v4
@@ -80,210 +74,85 @@ jobs:
           path: _shared
 
       - name: Load task-pack prompt for phase
-        if: ${{ inputs.action == 'run' }}
         id: load_prompt
-        uses: actions/github-script@v7
-        env:
-          PHASE: ${{ inputs.phase }}
-          ACTION: ${{ inputs.action }}
-        with:
-          script: |
-            const fs = require('fs');
-            const phase = process.env.PHASE;
-            const action = process.env.ACTION;
-            
-            if (!phase) {
-              core.setFailed('Phase input is required');
-              return;
-            }
-            
-            // For run actions, load the task-pack
-            if (action !== 'run') {
-              core.setFailed('Only run actions need task-pack prompts');
-              return;
-            }
-            const promptPath = `_shared/.atriumn/task-packs/${phase}.md`;
-            if (!fs.existsSync(promptPath)) {
-              core.setFailed(`Missing task-pack prompt: ${promptPath}`);
-              return;
-            }
-            const prompt = fs.readFileSync(promptPath, 'utf8');
-            core.setOutput('prompt', prompt);
+        run: |
+          PROMPT_PATH="_shared/.atriumn/task-packs/${{ inputs.phase }}.md"
+          if [[ ! -f "$PROMPT_PATH" ]]; then
+            echo "Missing task-pack prompt: $PROMPT_PATH" >&2
+            exit 1
+          fi
+          # Read and escape the prompt for JSON embedding
+          PROMPT_CONTENT=$(cat "$PROMPT_PATH")
+          echo "prompt<<EOF" >> $GITHUB_ENV
+          echo "$PROMPT_CONTENT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-          result-encoding: string
-
-
-      - name: Run Claude Code (single-session, direct prompt)
-        if: ${{ inputs.action == 'run' }}
+      - name: Run Claude Code Agent
         id: claude
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          
-          # Higher timeout for research tasks
           timeout_minutes: 40
-          
-          allowed_tools: |
-            Read
-            Write
-            Edit
-            MultiEdit
-            Grep
-            Glob
-            LS
-            TodoWrite
-
-          # Allow App/bot actors in case a maintainer runs this via re-runs, etc.
-          allowed_bots: "*"
-
-          # Pass a fully-rendered prompt to Claude
+          allowed_tools: "Read,Write,Edit,MultiEdit,Grep,Glob,LS,TodoWrite"
           direct_prompt: |
-            ${{ steps.load_prompt.outputs.prompt }}
-
+            ${{ env.prompt }}
             ---
-            # Context variables (for the prompt to interpolate):
-            feature_ref = "${{ inputs.feature_ref }}"
+            # Context variables:
+            feature_ref = "feature/issue-${{ inputs.issue_number }}"
             issue_number = "${{ inputs.issue_number }}"
             repository = "${{ inputs.repo_name }}"
             task_description = "${{ inputs.task_description }}"
-            output_path = "thoughts/shared/research/issue-${{ inputs.issue_number }}.md"
-            decision_record_path = "thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md"
             phase = "${{ inputs.phase }}"
-            action = "${{ inputs.action }}"
-            trigger_comment = "${{ inputs.trigger_comment }}"
 
-      - name: Assert research artifacts exist (research phase only)
-        if: ${{ inputs.phase == 'research' }}
-        shell: bash
+      - name: Commit & push artifacts
         run: |
-          set -euo pipefail
-          test -s "thoughts/shared/research/issue-${{ inputs.issue_number }}.md" \
-            || (echo "Expected research output missing or empty" && exit 1)
-          test -s "thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md" \
-            || (echo "Expected decision record missing or empty" && exit 1)
-
-      - name: Stash generated files from Claude branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/atriumn_out"
-          # copy only what we want to commit
-          rsync -a --delete thoughts/shared/ "$RUNNER_TEMP/atriumn_out/shared/"
-
-      - name: Clean working directory before branch switch
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Stash any uncommitted changes and remove untracked files
-          git add -A || true
-          git stash --include-untracked || true
-          git clean -fd || true
-
-      - name: Switch to target feature branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          TARGET="${{ inputs.feature_ref }}"
-          git fetch origin "$TARGET" || true
-          # create or reset local branch to remote if it exists; otherwise start new
-          if git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
-            git checkout -B "$TARGET" "origin/$TARGET"
-          else
-            git checkout -B "$TARGET"
-          fi
-
-      - name: Restore generated files onto target branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p thoughts/shared
-          rsync -a "$RUNNER_TEMP/atriumn_out/shared/" "thoughts/shared/"
-
-      - name: Ignore _shared working dir
-        shell: bash
-        run: |
-          echo "/_shared" >> .git/info/exclude
-
-      - name: Ensure _shared/ is not staged
-        shell: bash
-        run: |
-          git restore --staged _shared || true
-
-      - name: Commit & push artifacts to target branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name  "atriumn-bot"
+          git config user.name "atriumn-bot"
           git config user.email "bot@atriumn.dev"
-          # only add the thoughts directory (avoid picking up anything else)
           git add thoughts/
-          if ! git diff --cached --quiet; then
-            git commit -m "Atriumn ${{ inputs.phase }} artifacts for issue #${{ inputs.issue_number }}"
-            git push origin "${{ inputs.feature_ref }}"
-          else
+          if git diff --cached --quiet; then
             echo "No changes to commit."
+          else
+            git commit -m "feat(${{ inputs.phase }}): AI-generated artifacts for issue #${{ inputs.issue_number }}"
+            git push origin "feature/issue-${{ inputs.issue_number }}"
           fi
-
-      - name: Post completion comment with file links
-        if: ${{ inputs.phase == 'research' }}
+      
+      - name: 'Update Status Check: Success'
+        if: success()
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { owner, repo } = context.repo;
-            const issueNumber = '${{ inputs.issue_number }}';
-            const featureRef = '${{ inputs.feature_ref }}';
             const phase = '${{ inputs.phase }}';
-            
-            const researchUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/research/issue-${issueNumber}.md`;
-            const decisionUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/decisions/issue-${issueNumber}.md`;
-            
-            const body = `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} completed**\n\n📋 **Generated Files:**\n- [Research Document](${researchUrl})\n- [Decision Record](${decisionUrl})\n\n🌿 **Branch:** [\`${featureRef}\`](https://github.com/${owner}/${repo}/tree/${featureRef})`;
-
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: parseInt(issueNumber),
-              body
+            const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.create_check.outputs.result }},
+              status: 'completed',
+              conclusion: 'success',
+              output: {
+                title: `${phaseTitle} Phase Complete!`,
+                summary: 'The AI agent successfully completed the ${phase} phase. The generated artifacts have been committed. Please review the changes in the PR and provide your approval to proceed to the next phase.'
+              }
             });
 
-      - name: Post completion comment with file links (plan phase)
-        if: ${{ inputs.phase == 'plan' }}
+      - name: 'Update Status Check: Failure'
+        if: failure()
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { owner, repo } = context.repo;
-            const issueNumber = '${{ inputs.issue_number }}';
-            const featureRef = '${{ inputs.feature_ref }}';
             const phase = '${{ inputs.phase }}';
-            
-            const planUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/plans/issue-${issueNumber}.md`;
-            const decisionUrl = `https://github.com/${owner}/${repo}/blob/${featureRef}/thoughts/shared/decisions/issue-${issueNumber}.md`;
-            
-            const body = `✅ **${phase.charAt(0).toUpperCase() + phase.slice(1)} completed**\n\n📋 **Generated Files:**\n- [Plan Document](${planUrl})\n- [Decision Record](${decisionUrl})\n\n🌿 **Branch:** [\`${featureRef}\`](https://github.com/${owner}/${repo}/tree/${featureRef})`;
-
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: parseInt(issueNumber),
-              body
+            const phaseTitle = phase.charAt(0).toUpperCase() + phase.slice(1);
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.create_check.outputs.result }},
+              status: 'completed',
+              conclusion: 'failure',
+              output: {
+                title: `${phaseTitle} Phase Failed`,
+                summary: 'The AI agent encountered an error during the ${phase} phase. Please check the workflow logs for details.'
+              }
             });
-
-      - name: Legacy commit step (unused but kept for compatibility)
-        if: always()
-        shell: bash
-        run: |
-          set -e
-          git config user.name  "atriumn-bot"
-          git config user.email "bot@atriumn.dev"
-          if [ -n "$(git status --porcelain)" ]; then
-            git add -A
-            git commit -m "Atriumn ${{
-              inputs.phase
-            }} artifacts for issue #${{ inputs.issue_number }}"
-            git push origin "${{ inputs.feature_ref }}"
-          else
-            echo "No changes to commit."
-          fi

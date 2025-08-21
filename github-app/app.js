@@ -1,462 +1,237 @@
 require('dotenv').config();
 const { App } = require('@octokit/app');
-const { createNodeMiddleware } = require('@octokit/webhooks');
 
-// Track processed comments to prevent duplicate workflow runs
-const processedComments = new Set();
-
-// GitHub App configuration
 const app = new App({
   appId: process.env.GITHUB_APP_ID,
   privateKey: process.env.GITHUB_PRIVATE_KEY,
   webhooks: {
-    secret: process.env.GITHUB_WEBHOOK_SECRET
-  }
+    secret: process.env.GITHUB_WEBHOOK_SECRET,
+  },
 });
 
-// New task pack system triggers
-const TASK_PACK_TRIGGERS = {
-  '/atriumn-research': 'research',
-  '/atriumn-plan': 'plan', 
-  '/atriumn-implement': 'implement',
-  '/atriumn-validate': 'validate'
-};
+// --- START: Onboarding and Template Logic ---
 
-// Approval triggers (handled by phase-approvals.yml)
-const APPROVAL_TRIGGERS = {
-  '/atriumn-approve-research': 'approve-research',
-  '/atriumn-revise-research': 'revise-research',
-  '/atriumn-approve-plan': 'approve-plan', 
-  '/atriumn-revise-plan': 'revise-plan',
-  '/atriumn-approve-implement': 'approve-implement',
-  '/atriumn-revise-implement': 'revise-implement',
-  '/atriumn-approve-validate': 'approve-validate',
-  '/atriumn-revise-validate': 'revise-validate'
-};
+const WORKFLOW_TEMPLATE = `name: Atriumn Development Pipeline
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'The pipeline phase to run (research, plan, implement, validate)'
+        required: true
+        type: string
+      issue_number:
+        description: 'The issue number'
+        required: true
+        type: string
+      pr_number:
+        description: 'The pull request number'
+        required: true
+        type: string
+      head_sha:
+        description: 'The SHA of the commit to run checks against'
+        required: true
+        type: string
+      task_description:
+        description: 'The task description for the AI'
+        required: false
+        type: string
 
-// GitHub App now dispatches directly to task pack workflows
-// No static workflow template needed - repos use their own claude.yml dispatcher
+jobs:
+  run-atriumn-phase:
+    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
+    secrets: inherit
+    with:
+      repo_name: \${{ github.repository }}
+      phase: \${{ inputs.phase }}
+      issue_number: \${{ inputs.issue_number }}
+      pr_number: \${{ inputs.pr_number }}
+      head_sha: \${{ inputs.head_sha }}
+      task_description: \${{ inputs.task_description }}
+`;
 
-// Function to create PR after workflow creates commits
-async function createPRWhenReady(octokit, repo, issue, featureRef, maxRetries = 6) {
-  const prTitle = `Feature: Issue #${issue.number} – multi-phase development`;
-  const prBody = `Tracking PR for Issue #${issue.number}.
-
-## Development Phases:
-- [ ] Research
-- [ ] Plan  
-- [ ] Implement
-- [ ] Validate
-
-**Issue:** ${issue.title}
-**Branch:** \`${featureRef}\`
-
-This PR will be updated automatically as each phase completes.`;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // Check if PR already exists
-      const existingPRs = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
-        owner: repo.owner.login,
-        repo: repo.name,
-        head: `${repo.owner.login}:${featureRef}`,
-        state: 'open'
-      });
-
-      if (existingPRs.data.length > 0) {
-        console.log(`Draft PR already exists for ${featureRef}: #${existingPRs.data[0].number}`);
-        return;
-      }
-
-      // Try to create PR
-      const newPR = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
-        owner: repo.owner.login,
-        repo: repo.name,
-        title: prTitle,
-        head: featureRef,
-        base: 'develop',
-        body: prBody,
-        draft: true
-      });
-      
-      console.log(`Created draft PR #${newPR.data.number} for ${featureRef}`);
-      return;
-      
-    } catch (error) {
-      if (error.message.includes('No commits between') && attempt < maxRetries) {
-        console.log(`Attempt ${attempt}: No commits yet, waiting 30s before retry...`);
-        await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
-        continue;
-      }
-      
-      throw error; // Re-throw if it's not a "no commits" error or we've exhausted retries
-    }
-  }
-  
-  throw new Error(`Failed to create PR after ${maxRetries} attempts - workflow may not have created commits`);
-}
-
-// Auto-setup workflow when app is installed
-app.webhooks.on('installation.created', async ({ payload }) => {
-  console.log('App installed on repositories:', payload.repositories?.map(r => r.full_name));
-  
-  const installationId = payload.installation.id;
-  const octokit = await app.getInstallationOctokit(installationId);
-  
-  // Setup workflow for each repository
-  for (const repo of payload.repositories || []) {
-    try {
-      await setupWorkflow(octokit, repo.owner.login, repo.name);
-      console.log(`✅ Workflow setup complete for ${repo.full_name}`);
-    } catch (error) {
-      console.error(`❌ Failed to setup workflow for ${repo.full_name}:`, error.message);
-    }
-  }
-});
-
-// Auto-setup workflow when app is installed on additional repositories
-app.webhooks.on('installation_repositories.added', async ({ payload }) => {
-  console.log('App installed on additional repositories:', payload.repositories_added?.map(r => r.full_name));
-  
-  const installationId = payload.installation.id;
-  const octokit = await app.getInstallationOctokit(installationId);
-  
-  // Setup workflow for each new repository
-  for (const repo of payload.repositories_added || []) {
-    try {
-      await setupWorkflow(octokit, repo.owner.login, repo.name);
-      console.log(`✅ Workflow setup complete for ${repo.full_name}`);
-    } catch (error) {
-      console.error(`❌ Failed to setup workflow for ${repo.full_name}:`, error.message);
-    }
-  }
-});
-
-// Setup workflow in a repository
-async function setupWorkflow(octokit, owner, repo) {
+async function createOnboardingPR(octokit, owner, repo) {
   const workflowPath = '.github/workflows/development-pipeline.yml';
-  
+  const setupBranch = 'atriumn/setup';
+
   try {
-    // Check if workflow already exists
-    await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+    const defaultBranch = await octokit.repos.get({ owner, repo }).then(r => r.data.default_branch);
+    const { data: ref } = await octokit.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
+
+    await octokit.git.createRef({ owner, repo, ref: `refs/heads/${setupBranch}`, sha: ref.object.sha });
+    console.log(`Created setup branch '${setupBranch}' for ${owner}/${repo}.`);
+
+    await octokit.repos.createOrUpdateFileContents({
       owner,
       repo,
-      path: workflowPath
+      path: workflowPath,
+      message: 'feat: Add Atriumn development pipeline workflow',
+      content: Buffer.from(WORKFLOW_TEMPLATE).toString('base64'),
+      branch: setupBranch,
     });
-    console.log(`Workflow already exists in ${owner}/${repo}`);
-    return;
+    console.log(`Added workflow file to ${owner}/${repo}.`);
+
+    const prTitle = '🚀 Configure Atriumn Issue-Driven Development';
+    const prBody = `Welcome to Atriumn! To enable AI-powered development, please review and merge this pull request.
+
+**What this PR adds:**
+*   \`${workflowPath}\`: The workflow that runs the Atriumn AI development phases.
+
+**Next Steps:**
+1.  (Optional) Create a \`.github/development-pipeline-config.yml\` file to customize behavior.
+2.  Merge this pull request.
+3.  Create a new issue and comment \`/atriumn-research\` to start!`;
+
+    await octokit.pulls.create({ owner, repo, title: prTitle, head: setupBranch, base: defaultBranch, body: prBody });
+    console.log(`Created onboarding PR for ${owner}/${repo}.`);
   } catch (error) {
-    // File doesn't exist, create it
-    if (error.status !== 404) {
-      throw error;
-    }
+    console.error(`Failed to create onboarding PR for ${owner}/${repo}:`, error);
   }
-  
-  // Create the workflow file
-  await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
-    owner,
-    repo,
-    path: workflowPath,
-    message: 'Add Atriumn Issue-Driven Development Pipeline',
-    content: Buffer.from(WORKFLOW_TEMPLATE).toString('base64'),
-    committer: {
-      name: 'Atriumn Bot',
-      email: 'bot@atriumn.com'
-    }
-  });
-  
-  console.log(`Created workflow file in ${owner}/${repo}`);
 }
 
-// Test version that creates the full workflow structure
-async function setupWorkflowTest(octokit, owner, repo) {
-  const workflowPath = '.github/workflows/atriumn-pipeline-test.yml';
-  
-  // First, try to create the .github directory
-  try {
-    await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
-      owner,
-      repo,
-      path: '.github/.gitkeep',
-      message: 'Create .github directory',
-      content: Buffer.from('').toString('base64'),
-      committer: {
-        name: 'Atriumn Bot',
-        email: 'bot@atriumn.com'
-      }
-    });
-    console.log(`Created .github directory in ${owner}/${repo}`);
-  } catch (error) {
-    if (error.status !== 422) { // 422 means file already exists
-      console.log(`Directory creation failed: ${error.message}`);
-    }
+app.webhooks.on('installation.created', async ({ payload }) => {
+  const octokit = await app.getInstallationOctokit(payload.installation.id);
+  for (const repo of payload.repositories) {
+    await createOnboardingPR(octokit, repo.owner.login, repo.name);
   }
+});
 
-  // Then try to create the workflows directory
-  try {
-    await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
-      owner,
-      repo,
-      path: '.github/workflows/.gitkeep', 
-      message: 'Create workflows directory',
-      content: Buffer.from('').toString('base64'),
-      committer: {
-        name: 'Atriumn Bot',
-        email: 'bot@atriumn.com'
-      }
-    });
-    console.log(`Created workflows directory in ${owner}/${repo}`);
-  } catch (error) {
-    if (error.status !== 422) {
-      console.log(`Workflows directory creation failed: ${error.message}`);
-    }
+app.webhooks.on('installation_repositories.added', async ({ payload }) => {
+  const octokit = await app.getInstallationOctokit(payload.installation.id);
+  for (const repo of payload.repositories_added) {
+    await createOnboardingPR(octokit, repo.owner.login, repo.name);
   }
-  
-  try {
-    // Check if workflow already exists
-    await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
-      owner,
-      repo,
-      path: workflowPath
-    });
-    console.log(`Workflow already exists in ${owner}/${repo}`);
-    return;
-  } catch (error) {
-    // File doesn't exist, create it
-    if (error.status !== 404) {
-      throw error;
-    }
-  }
-  
-  // Create the workflow file
-  await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
-    owner,
-    repo,
-    path: workflowPath,
-    message: 'Add Atriumn Issue-Driven Development Pipeline',
-    content: Buffer.from(WORKFLOW_TEMPLATE).toString('base64'),
-    committer: {
-      name: 'Atriumn Bot',
-      email: 'bot@atriumn.com'
-    }
-  });
-  
-  console.log(`Created workflow file in ${owner}/${repo}`);
-}
+});
 
-// Handle issue comments
+// --- END: Onboarding and Template Logic ---
+
+
+// --- START: Core Pipeline Orchestration Logic ---
+
 app.webhooks.on('issue_comment.created', async ({ payload }) => {
-  const comment = payload.comment.body;
-  const repo = payload.repository;
+  const octokit = await app.getInstallationOctokit(payload.installation.id);
+  const commentBody = payload.comment.body || '';
   const issue = payload.issue;
-  const commentUser = payload.comment.user.login;
-  const commentId = payload.comment.id;
-  
-  const body = (comment || '').trim();
+  const repo = payload.repository;
+  const owner = repo.owner.login;
+  const featureRef = `feature/issue-${issue.number}`;
 
-  // Handle /atriumn-* commands: create branch and post status, but don't dispatch workflows
-  
-  // Check if we already processed this comment (prevents duplicate webhook delivery)
-  if (processedComments.has(commentId)) {
-    console.log(`Ignoring duplicate webhook for comment ID ${commentId}`);
+  if (!commentBody.includes('/atriumn-research') || payload.sender.type === 'Bot') {
     return;
   }
   
-  // Ignore comments from bot accounts or automated systems
-  if (commentUser === 'github-actions[bot]' || commentUser === 'github-actions' || commentUser.includes('[bot]') || commentUser === 'atriumn-bot' || commentUser === 'atriumn-issue-driven-development[bot]') {
-    console.log(`Ignoring comment from bot user: ${commentUser}`);
-    return;
-  }
-  
-  // Mark this comment as processed
-  processedComments.add(commentId);
-  console.log(`Processing comment from ${commentUser}: "${comment}" (ID: ${commentId})`);
-  
-  // Get installation octokit instance
-  const installationId = payload.installation?.id;
-  if (!installationId) {
-    console.error('No installation ID found in payload');
-    return;
-  }
-  const octokit = await app.getInstallationOctokit(installationId);
-  
-  // Check for task pack triggers (e.g., "/research description")
-  for (const [trigger, taskPackId] of Object.entries(TASK_PACK_TRIGGERS)) {
-    const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
-    const match = comment.match(pattern);
+  console.log(`'/atriumn-research' triggered for issue #${issue.number}.`);
+
+  try {
+    const defaultBranch = await octokit.repos.get({ owner, repo: repo.name }).then(r => r.data.default_branch);
+    const { data: ref } = await octokit.git.getRef({ owner, repo: repo.name, ref: `heads/${defaultBranch}` });
+    await octokit.git.createRef({ owner, repo: repo.name, ref: `refs/heads/${featureRef}`, sha: ref.object.sha });
+    console.log(`Created branch ${featureRef}.`);
+
+    const { data: latestCommit } = await octokit.git.getCommit({ owner, repo: repo.name, commit_sha: ref.object.sha });
+    const { data: newCommit } = await octokit.git.createCommit({
+        owner, repo: repo.name, message: `feat: Initialize pipeline for issue #${issue.number}`,
+        tree: latestCommit.tree.sha, parents: [latestCommit.sha]
+    });
+    await octokit.git.updateRef({ owner, repo: repo.name, ref: `heads/${featureRef}`, sha: newCommit.sha });
+    console.log(`Created initial commit ${newCommit.sha}.`);
     
-    if (match) {
-      // Use provided description or generate from issue context
-      const taskDescription = match[1] || `${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} phase for: "${issue.title}"
-      
-Context from issue description:
-${issue.body ? issue.body.substring(0, 500) + (issue.body.length > 500 ? '...' : '') : 'No additional context provided'}`;
-      console.log(`Task pack trigger matched: ${trigger} -> ${taskPackId}`);
-      console.log(`Task description: ${taskDescription}`);
-      
-      try {
-        const featureRef = `feature/issue-${issue.number}`;
-        
-        // Create feature branch from develop if it doesn't exist
-        try {
-          // Check if branch exists
-          await octokit.request('GET /repos/{owner}/{repo}/git/ref/{ref}', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            ref: `heads/${featureRef}`
-          });
-          console.log(`Branch ${featureRef} already exists`);
-        } catch (error) {
-          if (error.status === 404) {
-            // Branch doesn't exist, create it
-            console.log(`Creating branch ${featureRef} from develop`);
-            
-            // Get develop branch SHA
-            const developRef = await octokit.request('GET /repos/{owner}/{repo}/git/ref/{ref}', {
-              owner: repo.owner.login,
-              repo: repo.name,
-              ref: 'heads/develop'
-            });
-            
-            // Create new branch
-            await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
-              owner: repo.owner.login,
-              repo: repo.name,
-              ref: `refs/heads/${featureRef}`,
-              sha: developRef.data.object.sha
-            });
-            
-            console.log(`Successfully created branch ${featureRef}`);
-          } else {
-            throw error;
-          }
-        }
-        
-        // DON'T trigger workflow_dispatch - let consumer workflow handle via issue_comment
-        console.log(`Branch created and status posted for ${taskPackId} - workflow will be triggered by user's comment`);
-        
-        // Create PR after workflow creates commits (async, don't wait)
-        createPRWhenReady(octokit, repo, issue, featureRef).catch(err => 
-          console.error(`Failed to create PR for ${featureRef}:`, err.message)
-        );
-        
-        // Comment on issue to acknowledge
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `🤖 **${taskPackId.charAt(0).toUpperCase() + taskPackId.slice(1)} task started**\n\nTriggered by: ${trigger}\nBranch: \`feature/issue-${issue.number}\`\n\nWatch progress in [Actions](https://github.com/${repo.owner.login}/${repo.name}/actions)`
-        });
-        
-        return; // Only trigger once per comment
-      } catch (error) {
-        console.error(`Failed to dispatch ${taskPackId} task pack:`, error);
-        
-        // Comment on issue about error
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `❌ **Failed to start ${taskPackId} task**\n\nError: ${error.message}\n\nPlease check the GitHub App configuration.`
-        });
-      }
-    }
-  }
-  
-  // Check for approval triggers (same dispatch pattern as tasks)
-  for (const [trigger, approvalType] of Object.entries(APPROVAL_TRIGGERS)) {
-    const pattern = new RegExp(`^\\s*${trigger.replace('/', '\\/')}(?:\\s+(.+))?\\s*$`, 'm');
-    const match = comment.match(pattern);
+    const prTitle = `WIP: Implementation for Issue #${issue.number} - ${issue.title}`;
+    const prBody = `This is a draft PR for issue #${issue.number}. It will be updated automatically by the Atriumn development pipeline.\n\n**Phases:**\n- [ ] Research\n- [ ] Plan\n- [ ] Implement\n- [ ] Validate\n\nCloses #${issue.number}`;
+    const { data: pr } = await octokit.pulls.create({ owner, repo: repo.name, title: prTitle, head: featureRef, base: defaultBranch, body: prBody, draft: true });
+    console.log(`Created Draft PR #${pr.number}.`);
     
-    if (match) {
-      const phase = approvalType.replace('approve-', '').replace('revise-', '');
-      console.log(`Approval trigger matched: ${trigger} -> ${approvalType}`);
-      
-      try {
-        // Post next phase trigger comment (silent approval)
-        const nextPhase = {
-          'research': 'plan',
-          'plan': 'implement', 
-          'implement': 'validate',
-          'validate': 'complete'
-        }[phase] || 'complete';
-        
-        if (nextPhase !== 'complete') {
-          await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-            owner: repo.owner.login,
-            repo: repo.name,
-            issue_number: issue.number,
-            body: `/atriumn-${nextPhase}`
-          });
-        }
-        
-        console.log(`Approval complete: ${phase} -> ${nextPhase}`);
-        return;
-      } catch (error) {
-        console.error(`Failed to process ${approvalType}:`, error);
-        
-        await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          owner: repo.owner.login,
-          repo: repo.name,
-          issue_number: issue.number,
-          body: `❌ **Failed to process ${approvalType}**\n\nError: ${error.message}`
-        });
-      }
-    }
+    await octokit.actions.createWorkflowDispatch({
+      owner, repo: repo.name, workflow_id: 'development-pipeline.yml', ref: featureRef,
+      inputs: {
+        phase: 'research', issue_number: issue.number.toString(), pr_number: pr.number.toString(),
+        head_sha: newCommit.sha, task_description: issue.title
+      },
+    });
+    
+    await octokit.issues.createComment({
+      owner, repo: repo.name, issue_number: issue.number,
+      body: `🚀 **Pipeline Started!**\n\nA Draft PR has been created to track progress: **#${pr.number}**.\n\nThe **research** phase is now in progress. Watch for status updates on the PR.`
+    });
+  } catch (error) {
+    console.error('Failed to start pipeline:', error);
+    await octokit.issues.createComment({
+      owner, repo: repo.name, issue_number: issue.number,
+      body: `❌ **Error starting pipeline:**\n\`\`\`\n${error.message}\n\`\`\``
+    });
   }
 });
 
-// Health check endpoint
-app.webhooks.on('ping', async ({ payload }) => {
-  console.log('Webhook ping received:', payload.zen);
+async function determineCurrentPhase(octokit, owner, repo, ref) {
+  const { data: { check_runs } } = await octokit.checks.listForRef({ owner, repo, ref });
+  
+  const phaseOrder = ['validate', 'implement', 'plan', 'research'];
+  for (const phase of phaseOrder) {
+    const checkName = `Atriumn Phase: ${phase.charAt(0).toUpperCase() + phase.slice(1)}`;
+    const check = check_runs.find(run => run.name === checkName && run.conclusion === 'success');
+    if (check) {
+      console.log(`Found last successful phase: ${phase}`);
+      return phase;
+    }
+  }
+  return null;
+}
+
+app.webhooks.on('pull_request_review.submitted', async ({ payload }) => {
+  const octokit = await app.getInstallationOctokit(payload.installation.id);
+  if (payload.review.state !== 'approved') return;
+
+  const pr = payload.pull_request;
+  const repo = payload.repository;
+  const owner = repo.owner.login;
+
+  console.log(`Received approval on PR #${pr.number}.`);
+
+  try {
+    const currentPhase = await determineCurrentPhase(octokit, owner, repo.name, pr.head.sha);
+    const phaseProgression = { 'research': 'plan', 'plan': 'implement', 'implement': 'validate' };
+    const nextPhase = phaseProgression[currentPhase];
+
+    if (!nextPhase) {
+      if (currentPhase === 'validate') {
+        await octokit.issues.createComment({ owner, repo: repo.name, issue_number: pr.number, body: '✅ All phases are complete and approved. This PR is ready for final review and merge.' });
+      }
+      return;
+    }
+
+    const issueNumberMatch = pr.body.match(/Closes #(\d+)|Issue #(\d+)/);
+    if (!issueNumberMatch) throw new Error("Could not find a linked issue number in the PR body.");
+    const issueNumber = issueNumberMatch[1] || issueNumberMatch[2];
+
+    await octokit.actions.createWorkflowDispatch({
+      owner, repo: repo.name, workflow_id: 'development-pipeline.yml', ref: pr.head.ref,
+      inputs: {
+        phase: nextPhase, issue_number: issueNumber, pr_number: pr.number.toString(),
+        head_sha: pr.head.sha, task_description: pr.title
+      },
+    });
+
+    await octokit.issues.createComment({ owner, repo: repo.name, issue_number: pr.number, body: `🚀 Approval received! Kicking off the **${nextPhase}** phase.` });
+  } catch (error) {
+    console.error('Failed to process PR approval:', error);
+    await octokit.issues.createComment({ owner, repo: repo.name, issue_number: pr.number, body: `❌ **Error processing approval:**\n\`\`\`\n${error.message}\n\`\`\`` });
+  }
 });
 
-// Error handling
+// --- END: Core Pipeline Orchestration Logic ---
+
+
+// --- Boilerplate ---
 app.webhooks.onError((error) => {
-  console.error('Webhook error:', error);
+  console.error(`Error processing webhook!`, error);
 });
 
-// Export for deployment
 module.exports = app;
 
-// Local development server
 if (require.main === module) {
-  const port = process.env.PORT || 3002;
-  const middleware = createNodeMiddleware(app.webhooks, { path: '/api/webhook' });
-  
-  // Add test endpoint for manual workflow creation
-  const server = require('http').createServer(async (req, res) => {
-    if (req.url === '/test-setup' && req.method === 'POST') {
-      try {
-        const installationId = 81630447; // Your installation ID
-        const octokit = await app.getInstallationOctokit(installationId);
-        
-        // Test PR creation directly - try without draft first
-        const testPR = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
-          owner: 'atriumn',
-          repo: 'curatefor.me',
-          title: 'Test PR from GitHub App',
-          head: 'atriumn:feature/issue-97',
-          base: 'develop',
-          body: 'Testing GitHub App PR creation'
-        });
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: 'PR created', pr: testPR.data.number }));
-      } catch (error) {
-        console.error('Test setup error:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: error.message, status: error.status }));
-      }
-    } else {
-      // Pass to webhook middleware
-      middleware(req, res);
-    }
-  });
-  
-  server.listen(port, () => {
-    console.log(`Atriumn Issue-Driven Development app listening on port ${port}`);
-    console.log('Configured task pack triggers:', Object.keys(TASK_PACK_TRIGGERS));
-    console.log('Configured approval triggers:', Object.keys(APPROVAL_TRIGGERS));
-    console.log('Test endpoint: POST http://localhost:' + port + '/test-setup');
+  const port = process.env.PORT || 3000;
+  const http = require('http');
+  const { createNodeMiddleware } = require('@octokit/webhooks');
+  http.createServer(createNodeMiddleware(app.webhooks)).listen(port, () => {
+    console.log(`Server listening for events at http://localhost:${port}`);
   });
 }
