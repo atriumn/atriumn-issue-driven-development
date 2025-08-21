@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { App } = require('@octokit/app');
+const fs = require('fs').promises;
+const path = require('path');
 
 const app = new App({
   appId: process.env.GITHUB_APP_ID,
@@ -11,81 +13,56 @@ const app = new App({
 
 // --- START: Onboarding and Template Logic ---
 
-const WORKFLOW_TEMPLATE = `name: Atriumn Development Pipeline
-on:
-  workflow_dispatch:
-    inputs:
-      phase:
-        description: 'The pipeline phase to run (research, plan, implement, validate)'
-        required: true
-        type: string
-      issue_number:
-        description: 'The issue number'
-        required: true
-        type: string
-      pr_number:
-        description: 'The pull request number'
-        required: true
-        type: string
-      head_sha:
-        description: 'The SHA of the commit to run checks against'
-        required: true
-        type: string
-      task_description:
-        description: 'The task description for the AI'
-        required: false
-        type: string
+// Helper to recursively get all template files
+async function getTemplateFiles(dir) {
+  const dirents = await fs.readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(dirents.map((dirent) => {
+    const res = path.resolve(dir, dirent.name);
+    const repoPath = path.relative(path.join(__dirname, '..', 'templates', 'pipeline'), res);
+    return dirent.isDirectory() ? getTemplateFiles(res) : {
+      path: repoPath,
+      content: fs.readFile(res, 'utf-8')
+    };
+  }));
+  return Array.prototype.concat(...files);
+}
 
-jobs:
-  run-atriumn-phase:
-    uses: atriumn/atriumn-issue-driven-development/.github/workflows/development-pipeline.yml@main
-    secrets: inherit
-    with:
-      repo_name: \${{ github.repository }}
-      phase: \${{ inputs.phase }}
-      issue_number: \${{ inputs.issue_number }}
-      pr_number: \${{ inputs.pr_number }}
-      head_sha: \${{ inputs.head_sha }}
-      task_description: \${{ inputs.task_description }}
-`;
-
+// The new onboarding function
 async function createOnboardingPR(octokit, owner, repo) {
-  const workflowPath = '.github/workflows/development-pipeline.yml';
-  const setupBranch = 'atriumn/setup';
+    const setupBranch = 'atriumn/setup';
+    try {
+        const defaultBranch = await octokit.repos.get({ owner, repo }).then(r => r.data.default_branch);
+        const { data: ref } = await octokit.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
+        await octokit.git.createRef({ owner, repo, ref: `refs/heads/${setupBranch}`, sha: ref.object.sha });
+        
+        const templateDir = path.join(__dirname, '..', 'templates', 'pipeline');
+        const filesToAdd = await getTemplateFiles(templateDir);
+        
+        for (const file of filesToAdd) {
+            const content = await file.content;
+            await octokit.repos.createOrUpdateFileContents({
+                owner, repo, path: file.path,
+                message: `feat: Add Atriumn pipeline file - ${file.path}`,
+                content: Buffer.from(content).toString('base64'),
+                branch: setupBranch
+            });
+            console.log(`Added file: ${file.path}`);
+        }
 
-  try {
-    const defaultBranch = await octokit.repos.get({ owner, repo }).then(r => r.data.default_branch);
-    const { data: ref } = await octokit.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
-
-    await octokit.git.createRef({ owner, repo, ref: `refs/heads/${setupBranch}`, sha: ref.object.sha });
-    console.log(`Created setup branch '${setupBranch}' for ${owner}/${repo}.`);
-
-    await octokit.repos.createOrUpdateFileContents({
-      owner,
-      repo,
-      path: workflowPath,
-      message: 'feat: Add Atriumn development pipeline workflow',
-      content: Buffer.from(WORKFLOW_TEMPLATE).toString('base64'),
-      branch: setupBranch,
-    });
-    console.log(`Added workflow file to ${owner}/${repo}.`);
-
-    const prTitle = '🚀 Configure Atriumn Issue-Driven Development';
-    const prBody = `Welcome to Atriumn! To enable AI-powered development, please review and merge this pull request.
+        const prTitle = '🚀 Configure Atriumn Issue-Driven Development';
+        const prBody = `Welcome to Atriumn! Merge this pull request to install the self-contained AI development pipeline.
 
 **What this PR adds:**
-*   \`${workflowPath}\`: The workflow that runs the Atriumn AI development phases.
+*   **Workflows:** The complete GitHub Actions workflow in \`.github/workflows/\`.
+*   **AI Prompts:** All necessary task packs for the AI agent in \`.atriumn/\`.
 
-**Next Steps:**
-1.  (Optional) Create a \`.github/development-pipeline-config.yml\` file to customize behavior.
-2.  Merge this pull request.
-3.  Create a new issue and comment \`/atriumn-research\` to start!`;
-
-    await octokit.pulls.create({ owner, repo, title: prTitle, head: setupBranch, base: defaultBranch, body: prBody });
-    console.log(`Created onboarding PR for ${owner}/${repo}.`);
-  } catch (error) {
-    console.error(`Failed to create onboarding PR for ${owner}/${repo}:`, error);
-  }
+By merging this, your repository will be fully equipped to run the pipeline with no external dependencies.`;
+        
+        await octokit.pulls.create({ owner, repo, title: prTitle, head: setupBranch, base: defaultBranch, body: prBody });
+        console.log(`Created onboarding PR for ${owner}/${repo}.`);
+    } catch (error) {
+        console.error(`Failed to create onboarding PR for ${owner}/${repo}:`, error);
+    }
 }
 
 app.webhooks.on('installation.created', async ({ payload }) => {

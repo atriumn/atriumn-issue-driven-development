@@ -189,6 +189,8 @@ describe('Atriumn GitHub App Logic', () => {
       expect(mockOctokit.git.createRef).toHaveBeenCalledWith(
         expect.objectContaining({ owner: 'test-owner', repo: 'test-repo', ref: 'refs/heads/atriumn/setup' })
       );
+      
+      // Should create multiple files (workflow + task packs)
       expect(mockOctokit.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
         expect.objectContaining({
           owner: 'test-owner',
@@ -197,6 +199,17 @@ describe('Atriumn GitHub App Logic', () => {
           branch: 'atriumn/setup'
         })
       );
+      
+      // Should also create task pack files
+      expect(mockOctokit.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({
+          owner: 'test-owner',
+          repo: 'test-repo',
+          path: '.atriumn/task-packs/research.md',
+          branch: 'atriumn/setup'
+        })
+      );
+      
       expect(mockOctokit.pulls.create).toHaveBeenCalledWith(
         expect.objectContaining({
           owner: 'test-owner',
