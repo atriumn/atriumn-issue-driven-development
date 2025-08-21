@@ -1,5 +1,39 @@
 // Vercel serverless function handler for GitHub webhooks
 const crypto = require('crypto');
+const fs = require('fs').promises;
+const path = require('path');
+
+// Read all template files
+async function getTemplateFiles() {
+  const templateDir = path.join(__dirname, '..', 'templates', 'pipeline');
+  const files = [];
+  
+  // Read workflow file
+  const workflowContent = await fs.readFile(
+    path.join(templateDir, '.github', 'workflows', 'development-pipeline.yml'), 
+    'utf-8'
+  );
+  files.push({
+    path: '.github/workflows/development-pipeline.yml',
+    content: workflowContent
+  });
+  
+  // Read task pack files
+  const taskPackDir = path.join(templateDir, '.atriumn', 'task-packs');
+  const taskPacks = await fs.readdir(taskPackDir);
+  
+  for (const file of taskPacks) {
+    if (file.endsWith('.md')) {
+      const content = await fs.readFile(path.join(taskPackDir, file), 'utf-8');
+      files.push({
+        path: `.atriumn/task-packs/${file}`,
+        content: content
+      });
+    }
+  }
+  
+  return files;
+}
 
 module.exports = async (req, res) => {
   // Only allow POST requests
@@ -40,6 +74,10 @@ module.exports = async (req, res) => {
         },
       });
 
+      // Get template files
+      const templateFiles = await getTemplateFiles();
+      console.log(`Loaded ${templateFiles.length} template files`);
+
       // Process each repository
       for (const repo of repositories) {
         try {
@@ -61,106 +99,67 @@ module.exports = async (req, res) => {
           
           // Create setup branch
           const setupBranch = 'atriumn/setup';
-          await octokit.git.createRef({
-            owner,
-            repo: repoName,
-            ref: `refs/heads/${setupBranch}`,
-            sha: ref.object.sha
-          });
-          
-          // Template files content
-          const files = [
-            {
-              path: '.github/workflows/development-pipeline.yml',
-              content: `name: Atriumn Development Pipeline
-
-on:
-  workflow_dispatch:
-    inputs:
-      phase:
-        description: 'The pipeline phase to run (research, plan, implement, validate)'
-        required: true
-        type: string
-      issue_number:
-        description: 'The issue number'
-        required: true
-        type: string
-      pr_number:
-        description: 'The pull request number'
-        required: true
-        type: string
-      head_sha:
-        description: 'The SHA of the commit to run checks against'
-        required: true
-        type: string
-      task_description:
-        description: 'The task description for the AI'
-        required: false
-        type: string
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  checks: write
-
-jobs:
-  run-phase:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          ref: feature/issue-\${{ inputs.issue_number }}
-          token: \${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run Claude Code Agent
-        uses: anthropics/claude-code-action@beta
-        with:
-          claude_code_oauth_token: \${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: \${{ secrets.GITHUB_TOKEN }}
-          timeout_minutes: 40
-          direct_prompt: |
-            Task: \${{ inputs.task_description }}
-            Phase: \${{ inputs.phase }}
-            Issue: #\${{ inputs.issue_number }}
-`
-            },
-            {
-              path: '.atriumn/README.md',
-              content: '# Atriumn Pipeline Configuration\n\nThis directory contains AI task configurations for the Atriumn development pipeline.'
+          try {
+            await octokit.git.createRef({
+              owner,
+              repo: repoName,
+              ref: `refs/heads/${setupBranch}`,
+              sha: ref.object.sha
+            });
+          } catch (error) {
+            if (error.status === 422) {
+              // Branch already exists, delete and recreate
+              await octokit.git.deleteRef({
+                owner,
+                repo: repoName,
+                ref: `heads/${setupBranch}`
+              });
+              await octokit.git.createRef({
+                owner,
+                repo: repoName,
+                ref: `refs/heads/${setupBranch}`,
+                sha: ref.object.sha
+              });
+            } else {
+              throw error;
             }
-          ];
+          }
           
-          // Create files
-          for (const file of files) {
+          // Create all template files
+          for (const file of templateFiles) {
+            console.log(`Creating ${file.path}`);
             await octokit.repos.createOrUpdateFileContents({
               owner,
               repo: repoName,
               path: file.path,
-              message: `feat: Add ${file.path}`,
+              message: `feat: Add Atriumn pipeline file - ${file.path}`,
               content: Buffer.from(file.content).toString('base64'),
               branch: setupBranch
             });
           }
           
           // Create PR
+          const prBody = `Welcome to Atriumn! Merge this pull request to install the self-contained AI development pipeline.
+
+**What this PR adds:**
+*   **Workflows:** The complete GitHub Actions workflow in \`.github/workflows/\`.
+*   **AI Prompts:** All necessary task packs for the AI agent in \`.atriumn/\`.
+
+By merging this, your repository will be fully equipped to run the pipeline with no external dependencies.
+
+**Next Steps:**
+1. Merge this PR
+2. Add the \`CLAUDE_CODE_OAUTH_TOKEN\` secret to your repository
+3. Create an issue describing what you want to build
+4. Comment \`/atriumn-research\` to start!`;
+
           await octokit.pulls.create({
             owner,
             repo: repoName,
             title: '🚀 Configure Atriumn Issue-Driven Development',
             head: setupBranch,
             base: defaultBranch,
-            body: `Welcome to Atriumn! Merge this PR to enable AI-powered development.
-
-**What this adds:**
-- GitHub Actions workflow for AI development phases
-- Configuration directory for task definitions
-
-**Next steps:**
-1. Merge this PR
-2. Create an issue describing what you want to build
-3. Comment \`/atriumn-research\` to start!`
+            body: prBody
           });
           
           console.log(`Successfully created onboarding PR for ${owner}/${repoName}`);
@@ -172,11 +171,130 @@ jobs:
 
     // Handle issue_comment.created event  
     if (event === 'issue_comment' && req.body.action === 'created') {
-      const comment = req.body.comment.body || '';
+      const { issue, comment, repository } = req.body;
+      const commentBody = comment.body || '';
       
-      if (comment.includes('/atriumn-research')) {
-        // This would trigger the research phase
-        console.log('Research command received');
+      if (commentBody.includes('/atriumn-research') && req.body.sender.type !== 'Bot') {
+        console.log(`Research command received for issue #${issue.number}`);
+        
+        // Import Octokit
+        const { Octokit } = await import('@octokit/rest');
+        const { createAppAuth } = await import('@octokit/auth-app');
+        
+        const octokit = new Octokit({
+          authStrategy: createAppAuth,
+          auth: {
+            appId: process.env.GITHUB_APP_ID,
+            privateKey: process.env.GITHUB_PRIVATE_KEY,
+            installationId: req.body.installation.id,
+          },
+        });
+        
+        const owner = repository.owner.login;
+        const repoName = repository.name;
+        const featureRef = `feature/issue-${issue.number}`;
+        
+        try {
+          // Get default branch
+          const { data: repoData } = await octokit.repos.get({ owner, repo: repoName });
+          const defaultBranch = repoData.default_branch;
+          
+          // Get ref
+          const { data: ref } = await octokit.git.getRef({ 
+            owner, 
+            repo: repoName, 
+            ref: `heads/${defaultBranch}` 
+          });
+          
+          // Create feature branch
+          await octokit.git.createRef({
+            owner,
+            repo: repoName,
+            ref: `refs/heads/${featureRef}`,
+            sha: ref.object.sha
+          });
+          
+          // Create initial commit
+          const { data: latestCommit } = await octokit.git.getCommit({ 
+            owner, 
+            repo: repoName, 
+            commit_sha: ref.object.sha 
+          });
+          
+          const { data: newCommit } = await octokit.git.createCommit({
+            owner, 
+            repo: repoName, 
+            message: `feat: Initialize pipeline for issue #${issue.number}`,
+            tree: latestCommit.tree.sha, 
+            parents: [latestCommit.sha]
+          });
+          
+          await octokit.git.updateRef({ 
+            owner, 
+            repo: repoName, 
+            ref: `heads/${featureRef}`, 
+            sha: newCommit.sha 
+          });
+          
+          // Create Draft PR
+          const prTitle = `WIP: Implementation for Issue #${issue.number} - ${issue.title}`;
+          const prBody = `This is a draft PR for issue #${issue.number}. It will be updated automatically by the Atriumn development pipeline.
+
+**Phases:**
+- [ ] Research
+- [ ] Plan
+- [ ] Implement
+- [ ] Validate
+
+Closes #${issue.number}`;
+          
+          const { data: pr } = await octokit.pulls.create({ 
+            owner, 
+            repo: repoName, 
+            title: prTitle, 
+            head: featureRef, 
+            base: defaultBranch, 
+            body: prBody, 
+            draft: true 
+          });
+          
+          // Trigger the research phase
+          await octokit.actions.createWorkflowDispatch({
+            owner, 
+            repo: repoName, 
+            workflow_id: 'development-pipeline.yml', 
+            ref: featureRef,
+            inputs: {
+              phase: 'research', 
+              issue_number: issue.number.toString(), 
+              pr_number: pr.number.toString(),
+              head_sha: newCommit.sha, 
+              task_description: issue.title
+            },
+          });
+          
+          // Post confirmation comment
+          await octokit.issues.createComment({
+            owner, 
+            repo: repoName, 
+            issue_number: issue.number,
+            body: `🚀 **Pipeline Started!**
+
+A Draft PR has been created to track progress: **#${pr.number}**.
+
+The **research** phase is now in progress. Watch for status updates on the PR.`
+          });
+          
+        } catch (error) {
+          console.error('Failed to start pipeline:', error);
+          
+          await octokit.issues.createComment({
+            owner, 
+            repo: repoName, 
+            issue_number: issue.number,
+            body: `❌ **Error starting pipeline:**\n\`\`\`\n${error.message}\n\`\`\``
+          });
+        }
       }
     }
 
