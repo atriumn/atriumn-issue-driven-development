@@ -120,13 +120,22 @@ runs:
         git config user.name "atriumn-bot"
         git config user.email "bot@atriumn.dev"
         
-        # Check if there are workflow files to commit
+        # Check if Claude suggested any workflows
+        if [ -d ".atriumn/suggested-workflows" ] && ls .atriumn/suggested-workflows/*.yml 2>/dev/null; then
+          echo "📋 Claude suggested workflow files in .atriumn/suggested-workflows/"
+          echo "These can be manually reviewed and moved to .github/workflows/ if approved"
+          ls -la .atriumn/suggested-workflows/
+        fi
+        
+        # Safety check: if Claude accidentally put files in .github/workflows
         if ls .github/workflows/*.yml 2>/dev/null | grep -v development-pipeline.yml; then
-          echo "Warning: Claude created workflow files. These require special permissions."
-          echo "Excluding workflow files from this commit to avoid permission errors."
-          # Remove workflow files from staging
-          git reset -- '.github/workflows/*.yml'
-          rm -f .github/workflows/*.yml 2>/dev/null || true
+          echo "⚠️ Moving workflow files to .atriumn/suggested-workflows/ for manual review"
+          mkdir -p .atriumn/suggested-workflows
+          for file in .github/workflows/*.yml; do
+            if [[ "$(basename $file)" != "development-pipeline.yml" ]]; then
+              mv "$file" .atriumn/suggested-workflows/ 2>/dev/null || true
+            fi
+          done
         fi
         
         git add -A

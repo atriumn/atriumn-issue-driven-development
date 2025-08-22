@@ -39,6 +39,7 @@ Do everything **inside this one session**.
    - Write/update tests as defined in Testing Strategy
    - Update documentation as needed
    - Follow the technical considerations from the plan
+   - **IMPORTANT**: If you need to create GitHub Actions workflows, save them in `.atriumn/suggested-workflows/` NOT `.github/workflows/` (security restriction)
 
 5) **Verify success criteria**
    - Ensure all success criteria from each phase are met
