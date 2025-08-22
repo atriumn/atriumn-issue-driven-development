@@ -43,6 +43,12 @@ module.exports = async (req, res) => {
     const event = req.headers['x-github-event'];
     const action = req.body.action;
     console.log(`Webhook received: event=${event}, action=${action}`);
+    
+    // Debug logging for ALL events
+    if (event === 'pull_request_review') {
+      console.log('PULL_REQUEST_REVIEW EVENT RECEIVED!');
+      console.log('Full payload:', JSON.stringify(req.body, null, 2));
+    }
 
     // Handle installation.created event
     if (event === 'installation' && req.body.action === 'created') {
