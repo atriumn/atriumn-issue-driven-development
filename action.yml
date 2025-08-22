@@ -119,6 +119,16 @@ runs:
       run: |
         git config user.name "atriumn-bot"
         git config user.email "bot@atriumn.dev"
+        
+        # Check if there are workflow files to commit
+        if ls .github/workflows/*.yml 2>/dev/null | grep -v development-pipeline.yml; then
+          echo "Warning: Claude created workflow files. These require special permissions."
+          echo "Excluding workflow files from this commit to avoid permission errors."
+          # Remove workflow files from staging
+          git reset -- '.github/workflows/*.yml'
+          rm -f .github/workflows/*.yml 2>/dev/null || true
+        fi
+        
         git add -A
         if git diff --cached --quiet; then
           echo "No changes to commit."
