@@ -223,14 +223,28 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
         let currentPhase = null;
         
         // Search in reverse order to find the most recent successful phase
+        let lastPhaseCompletedAt = null;
         for (const phase of phaseOrder) {
           const checkName = `Atriumn Phase: ${phase.charAt(0).toUpperCase() + phase.slice(1)}`;
           const check = check_runs.find(run => run.name === checkName && run.conclusion === 'success');
           if (check) {
             currentPhase = phase;
-            console.log(`Found last successful phase: ${phase}`);
+            lastPhaseCompletedAt = check.completed_at;
+            console.log(`Found last successful phase: ${phase} completed at ${lastPhaseCompletedAt}`);
             break;
           }
+        }
+        
+        // CRITICAL: Check if this approval is AFTER the last phase completed
+        if (lastPhaseCompletedAt && new Date(reviewSubmittedAt) < new Date(lastPhaseCompletedAt)) {
+          console.log(`Approval (${reviewSubmittedAt}) is older than last phase completion (${lastPhaseCompletedAt}). Ignoring.`);
+          await octokit.issues.createComment({ 
+            owner, 
+            repo: repoName, 
+            issue_number: pr.number, 
+            body: '⚠️ This approval was made before the last phase completed. Please approve again to trigger the next phase.' 
+          });
+          return res.status(200).json({ status: 'ignored', reason: 'approval predates phase completion' });
         }
         
         // Determine next phase
