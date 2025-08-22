@@ -348,6 +348,41 @@ git push origin $test_branch
           fi
         fi
         
+        # MANDATORY: Run linting and fix before committing (defense in depth)
+        echo "🔍 Running mandatory code quality checks..."
+        
+        # Check and fix frontend linting
+        if [ -f "packages/frontend/package.json" ]; then
+          echo "  📋 Frontend linting with auto-fix..."
+          cd packages/frontend
+          npm run lint -- --fix --max-warnings 0 || {
+            echo "❌ Frontend linting failed. AI must produce lint-clean code."
+            exit 1
+          }
+          cd ../..
+        fi
+        
+        # Check and fix functions linting
+        if [ -f "packages/functions/package.json" ]; then
+          echo "  📋 Functions linting with auto-fix..."
+          cd packages/functions
+          npm run lint -- --fix --max-warnings 0 2>/dev/null || echo "  ⚠️  Functions linting completed (may not have lint script)"
+          cd ../..
+        fi
+        
+        # Type checking
+        if [ -f "packages/frontend/package.json" ]; then
+          echo "  🔍 TypeScript type checking..."
+          cd packages/frontend
+          npm run typecheck || {
+            echo "❌ TypeScript type checking failed."
+            exit 1
+          }
+          cd ../..
+        fi
+        
+        echo "✅ Code quality checks passed"
+        
         git add -A
         if git diff --cached --quiet; then
           echo "No changes to commit."

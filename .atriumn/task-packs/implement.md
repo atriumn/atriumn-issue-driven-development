@@ -57,7 +57,13 @@ Do everything **inside this one session**.
    - Implement both automated and manual verification requirements
    - Test edge cases identified in the plan
 
-6) **Create implementation summary**
+6) **Code Quality Check (MANDATORY before completing)**
+   - Run linting with auto-fix: `cd packages/frontend && npm run lint -- --fix --max-warnings 0`
+   - Run type checking: `cd packages/frontend && npm run typecheck`
+   - Fix any remaining lint errors or warnings - zero tolerance
+   - Ensure build passes: `cd packages/frontend && npm run build`
+   
+7) **Create implementation summary**
    - Update `thoughts/shared/decisions/issue-${issue_number}.md` with:
      - Implementation completion status
      - Summary of changes made
