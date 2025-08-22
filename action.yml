@@ -103,6 +103,8 @@ runs:
         github_token: ${{ inputs.github_token }}
         timeout_minutes: 40
         allowed_tools: "Read,Write,Edit,MultiEdit,Grep,Glob,LS,TodoWrite"
+        # MCP servers could be added here when Claude Code supports them:
+        # mcp_servers: "github-context,codebase-search,test-runner"
         direct_prompt: |
           ${{ env.prompt }}
           ---

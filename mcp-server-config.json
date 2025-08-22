@@ -1,0 +1,56 @@
+{
+  "name": "atriumn-pipeline-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Atriumn pipeline context",
+  "servers": {
+    "github-context": {
+      "command": "node",
+      "args": ["./mcp-servers/github-context.js"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "codebase-search": {
+      "command": "node", 
+      "args": ["./mcp-servers/codebase-search.js"]
+    },
+    "test-runner": {
+      "command": "node",
+      "args": ["./mcp-servers/test-runner.js"]
+    }
+  },
+  "resources": [
+    {
+      "name": "issue-context",
+      "description": "Full context for an issue including related PRs and discussions",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "codebase-patterns", 
+      "description": "Common patterns and conventions in the codebase",
+      "mimeType": "text/markdown"
+    }
+  ],
+  "tools": [
+    {
+      "name": "run-tests",
+      "description": "Run test suite and get results",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "testPattern": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "search-similar-code",
+      "description": "Find similar implementations in codebase",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pattern": {"type": "string"}
+        }
+      }
+    }
+  ]
+}

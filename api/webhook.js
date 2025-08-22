@@ -303,7 +303,19 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
       const { issue, comment, repository } = req.body;
       const commentBody = comment.body || '';
       
-      if (commentBody.includes('/atriumn-research') && req.body.sender.type !== 'Bot') {
+      // Check for various trigger patterns
+      const triggers = [
+        '/atriumn-research',
+        '/ai-build',
+        '/claude-ship-it',
+        '🚀🤖', // Rocket + Robot emoji combo
+        '🧙‍♂️✨', // Wizard casting spell
+        '⚡build', // Lightning build
+      ];
+      
+      const isTriggered = triggers.some(trigger => commentBody.includes(trigger));
+      
+      if (isTriggered && req.body.sender.type !== 'Bot') {
         console.log(`Research command received for issue #${issue.number}`);
         
         // Import Octokit
