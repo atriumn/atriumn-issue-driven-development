@@ -199,6 +199,25 @@ runs:
             pull_number: ${{ inputs.pr_number }},
             body: updatedBody
           });
+          
+          // Dismiss all previous reviews when phase completes to require fresh approval
+          const { data: reviews } = await github.rest.pulls.listReviews({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: ${{ inputs.pr_number }}
+          });
+          
+          for (const review of reviews) {
+            if (review.state === 'APPROVED') {
+              await github.rest.pulls.dismissReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: ${{ inputs.pr_number }},
+                review_id: review.id,
+                message: `Phase ${phase} completed. Dismissing old approval to require fresh review for next phase.`
+              });
+            }
+          }
 
     - name: 'Update Status Check: Failure'
       if: failure()
