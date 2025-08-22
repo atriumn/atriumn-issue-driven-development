@@ -102,7 +102,7 @@ runs:
         claude_code_oauth_token: ${{ inputs.claude_code_oauth_token }}
         github_token: ${{ inputs.github_token }}
         timeout_minutes: 40
-        allowed_tools: "Read,Write,Edit,MultiEdit,Grep,Glob,LS,TodoWrite"
+        allowed_tools: "Read,Write,Edit,MultiEdit,Grep,Glob,LS,TodoWrite,Bash"
         # MCP servers could be added here when Claude Code supports them:
         # mcp_servers: "github-context,codebase-search,test-runner"
         direct_prompt: |
@@ -127,15 +127,225 @@ runs:
           ls -la .atriumn/suggested-workflows/
         fi
         
-        # Safety check: if Claude accidentally put files in .github/workflows
-        if ls .github/workflows/*.yml 2>/dev/null | grep -v development-pipeline.yml; then
-          echo "⚠️ Moving workflow files to .atriumn/suggested-workflows/ for manual review"
-          mkdir -p .atriumn/suggested-workflows
-          for file in .github/workflows/*.yml; do
-            if [[ "$(basename $file)" != "development-pipeline.yml" ]]; then
+        # Safety check: only move NEW workflow files Claude created (not existing ones)
+        # First, get list of workflow files that existed before Claude's changes
+        existing_workflows=$(git ls-tree HEAD .github/workflows/ 2>/dev/null | awk '{print $4}' | xargs -I {} basename {} || true)
+        
+        # Check if Claude created any NEW workflow files
+        new_workflows_found=false
+        for file in .github/workflows/*.yml; do
+          if [[ -f "$file" && "$(basename $file)" != "development-pipeline.yml" ]]; then
+            filename=$(basename "$file")
+            # Check if this file existed in the repo before
+            if ! echo "$existing_workflows" | grep -q "^$filename$"; then
+              # This is a NEW file Claude created
+              if [[ "$new_workflows_found" == "false" ]]; then
+                echo "📋 Claude created new workflow files - moving to .atriumn/suggested-workflows/ for review"
+                mkdir -p .atriumn/suggested-workflows
+                new_workflows_found=true
+              fi
+              echo "  Moving new workflow: $filename"
               mv "$file" .atriumn/suggested-workflows/ 2>/dev/null || true
             fi
-          done
+          fi
+        done
+        
+        if [[ "$new_workflows_found" == "true" ]]; then
+          echo "✅ New workflows moved to .atriumn/suggested-workflows/ for manual review"
+          echo "   Existing workflows remain unchanged in .github/workflows/"
+          
+          # Create a tracking issue for workflow suggestions (only on implement phase)
+          if [[ "${{ inputs.phase }}" == "implement" ]]; then
+            echo "📝 Creating tracking issue for workflow suggestions..."
+            
+            # List all suggested workflows
+            suggested_files=$(ls -1 .atriumn/suggested-workflows/*.yml 2>/dev/null | xargs -I {} basename {} | tr '\n' ',' | sed 's/,$//' || echo "")
+            
+            if [[ -n "$suggested_files" ]]; then
+              # Create a test branch for the workflow suggestions
+              test_branch="test/workflow-suggestions-${{ inputs.issue_number }}"
+              git checkout -b "$test_branch"
+              
+              # Move workflows to active location in test branch
+              cp -r .atriumn/suggested-workflows/*.yml .github/workflows/ 2>/dev/null || true
+              
+              # Create detailed issue body with workflow analysis
+              issue_body="## Workflow Suggestions from AI Implementation
+
+The AI assistant created workflow suggestions during the implementation of #${{ inputs.issue_number }}. A test branch has been created for you to review and test these workflows.
+
+### 🚀 Quick Start - Test These Workflows
+
+\`\`\`bash
+# Fetch and checkout the test branch
+git fetch origin $test_branch
+git checkout $test_branch
+
+# The workflows are already activated in this branch
+# You can now test them locally or push to see them in action
+
+# To test a specific workflow locally
+act -W .github/workflows/[workflow-name].yml  # Using act for local testing
+
+# Or push to test on GitHub
+git push origin $test_branch
+\`\`\`
+
+### 📋 Suggested Workflows
+"
+              for file in .atriumn/suggested-workflows/*.yml; do
+                if [[ -f "$file" ]]; then
+                  filename=$(basename "$file")
+                  
+                  # Extract workflow metadata
+                  workflow_name=$(grep "^name:" "$file" | head -1 | sed 's/name: *//' || echo "Unnamed Workflow")
+                  triggers=$(grep -A5 "^on:" "$file" | grep -E "^\s+(push|pull_request|workflow_dispatch|schedule):" | sed 's/^\s*/  - /' | tr '\n' ' ' || echo "")
+                  jobs_count=$(grep -c "^\s\s[a-zA-Z].*:$" "$file" || echo "0")
+                  lines_count=$(wc -l < "$file")
+                  
+                  issue_body="${issue_body}
+#### 📄 \`${filename}\`
+
+**Workflow Name:** ${workflow_name}
+**Triggers:** ${triggers:-Not specified}
+**Jobs:** ${jobs_count} job(s)
+**Size:** ${lines_count} lines
+
+<details>
+<summary>Click to view full workflow</summary>
+
+\`\`\`yaml
+$(cat "$file")
+\`\`\`
+
+</details>
+
+##### Purpose & Impact Analysis
+"
+                  # Analyze the workflow purpose
+                  if grep -q "test" "$file"; then
+                    issue_body="${issue_body}- 🧪 **Testing**: This workflow adds automated testing capabilities
+"
+                  fi
+                  if grep -q "deploy" "$file"; then
+                    issue_body="${issue_body}- 🚀 **Deployment**: This workflow handles deployment automation
+"
+                  fi
+                  if grep -q "visual\|screenshot" "$file"; then
+                    issue_body="${issue_body}- 👁️ **Visual Testing**: This workflow performs visual regression testing
+"
+                  fi
+                  if grep -q "lint\|format" "$file"; then
+                    issue_body="${issue_body}- 🎨 **Code Quality**: This workflow enforces code style and quality
+"
+                  fi
+                  
+                  issue_body="${issue_body}
+##### Potential Risks
+"
+                  # Check for potential risks
+                  if grep -q "secrets\." "$file"; then
+                    issue_body="${issue_body}- ⚠️ Uses secrets - review secret requirements
+"
+                  fi
+                  if grep -q "push.*main\|push.*master" "$file"; then
+                    issue_body="${issue_body}- ⚠️ Triggers on main/master branch pushes
+"
+                  fi
+                  if grep -q "npm publish\|docker push" "$file"; then
+                    issue_body="${issue_body}- ⚠️ Publishes artifacts - review permissions
+"
+                  fi
+                  
+                  issue_body="${issue_body}
+---
+"
+                fi
+              done
+              
+              # Commit the test branch
+              git add -A
+              git commit -m "test: Activate workflow suggestions for testing
+
+Related to #${{ inputs.issue_number }}
+This branch activates the suggested workflows for testing purposes." || true
+              
+              git push origin "$test_branch" || true
+              
+              # Switch back to original branch
+              git checkout "feature/issue-${{ inputs.issue_number }}"
+              
+              issue_body="${issue_body}
+### 🧪 Test Branch Created
+
+A test branch \`$test_branch\` has been created with all suggested workflows activated. You can:
+
+1. **Test locally**: Check out the branch and test the workflows
+2. **Create test PR**: Open a draft PR from this branch to see workflows in action
+3. **Run with act**: Use [act](https://github.com/nektos/act) to test workflows locally
+
+### 📝 Review Checklist
+
+- [ ] Review workflow triggers and ensure they match your needs
+- [ ] Check job permissions and secret requirements
+- [ ] Verify workflow doesn't conflict with existing CI/CD
+- [ ] Test workflow execution (locally or via PR)
+- [ ] Review any published artifacts or deployments
+- [ ] Ensure workflow follows your team's conventions
+
+### ✅ Adoption Options
+
+After testing, you have several options:
+
+#### Option 1: Accept All Workflows
+\`\`\`bash
+git checkout $test_branch
+git push origin $test_branch:main  # or create PR
+\`\`\`
+
+#### Option 2: Cherry-Pick Specific Workflows
+\`\`\`bash
+git checkout main
+git checkout $test_branch -- .github/workflows/[workflow-name].yml
+git commit -m \"feat: Add [workflow-name] workflow\"
+\`\`\`
+
+#### Option 3: Adopt with Modifications
+\`\`\`bash
+git checkout $test_branch
+# Edit workflows as needed
+git commit -am \"feat: Add customized workflows\"
+git push origin $test_branch
+# Create PR for review
+\`\`\`
+
+### 🔗 Related Links
+- Original Issue: #${{ inputs.issue_number }}
+- Implementation PR: #${{ inputs.pr_number }}
+- Test Branch: [\`$test_branch\`](../../tree/$test_branch)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+
+### 🏷️ Labels
+\`workflow-suggestion\` \`needs-review\` \`has-test-branch\`
+
+---
+*This issue was automatically created to track workflow suggestions from the AI pipeline. The test branch allows you to safely evaluate these workflows before adoption.*"
+
+              # Create the tracking issue and capture the issue number
+              issue_output=$(gh issue create \
+                --repo "${{ github.repository }}" \
+                --title "Review Workflow Suggestions from Issue #${{ inputs.issue_number }}" \
+                --body "$issue_body" \
+                --label "workflow-suggestion,needs-review,has-test-branch" \
+                2>&1) || echo "Note: Could not create tracking issue"
+                
+              # Extract issue number if created successfully
+              if [[ "$issue_output" =~ ([0-9]+)$ ]]; then
+                created_issue="${BASH_REMATCH[1]}"
+                echo "✅ Created tracking issue #$created_issue with test branch $test_branch"
+              fi
+            fi
+          fi
         fi
         
         git add -A

@@ -2,8 +2,8 @@
 
 You are the IMPLEMENTATION COORDINATOR for this run.
 
-Allowed tools only: Read, Grep, Glob, LS, Write, Edit, MultiEdit, TodoWrite  
-Disallowed: Bash/shell, MCP/CLI/web/Linear/external calls.  
+Allowed tools only: Read, Grep, Glob, LS, Write, Edit, MultiEdit, TodoWrite, Bash (for dependency management only)  
+Disallowed: MCP/CLI/web/Linear/external calls.  
 Do everything **inside this one session**.
 
 ## Inputs (provided below the prompt)
@@ -39,6 +39,18 @@ Do everything **inside this one session**.
    - Write/update tests as defined in Testing Strategy
    - Update documentation as needed
    - Follow the technical considerations from the plan
+   - **CRITICAL - Dependency Management**: When adding new imports for external libraries:
+     - First check if the package exists in the relevant package.json
+     - If missing, install it using: `cd [package-directory] && npm install <package-name>`
+     - Always install in the correct package directory (where the package.json is located)
+     - Use --save-dev for development dependencies (testing, build tools)
+     - Document all installed packages in your implementation summary
+     
+   - **Bash Usage Rules**:
+     - Use Bash ONLY for npm/yarn dependency management commands
+     - Do NOT use Bash for git operations, file system operations, or running applications
+     - Always change to the correct directory before installing packages
+     - Verify installations complete successfully
 
 5) **Verify success criteria**
    - Ensure all success criteria from each phase are met

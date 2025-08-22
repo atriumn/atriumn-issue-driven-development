@@ -32,6 +32,61 @@ Atriumn transforms the software development lifecycle by leveraging an AI agent 
 2.  **Merge the Onboarding PR**: The app will automatically create a Pull Request titled "🚀 Configure Atriumn Issue-Driven Development". Review and merge it.
 3.  **Start Developing**: Create a GitHub issue and comment `/atriumn-research` to kick off your first AI-driven development cycle!
 
+## Workflow Safety & Management
+
+### The Challenge
+
+When AI agents like Claude implement features, they often need to create or modify GitHub Actions workflows for CI/CD, testing, or deployment. However, allowing an AI to directly modify `.github/workflows/` poses significant risks:
+
+- **Accidental breakage**: AI could unintentionally break critical CI/CD pipelines
+- **Security concerns**: Workflows have access to secrets and can perform sensitive operations
+- **Unexpected changes**: AI might modify existing workflows in ways that disrupt team processes
+
+### Our Solution: Suggested Workflows
+
+Atriumn implements a **workflow safety mechanism** that protects your existing CI/CD setup while still allowing Claude to propose helpful workflow improvements:
+
+1. **Automatic Detection**: When Claude creates new workflow files during implementation, the pipeline automatically detects them
+2. **Safe Storage**: New workflows are moved to `.atriumn/suggested-workflows/` instead of `.github/workflows/`
+3. **Preservation**: Existing workflows remain untouched and continue running normally
+4. **Tracking Issues**: The pipeline automatically creates a GitHub issue to track and review suggested workflows
+5. **Human Control**: You review and manually activate workflows when ready
+
+### How It Works
+
+When Claude creates a workflow like `visual-testing.yml` for dark mode testing:
+
+```yaml
+# Claude creates: .github/workflows/visual-testing.yml
+# Pipeline moves it to: .atriumn/suggested-workflows/visual-testing.yml
+# Your existing workflows remain in: .github/workflows/
+```
+
+The pipeline then creates a tracking issue with:
+- List of suggested workflows with previews
+- Clear activation instructions
+- Links to the original issue and PR for context
+
+### Activating Suggested Workflows
+
+After reviewing, activate workflows with simple commands:
+
+```bash
+# Activate a specific workflow
+mv .atriumn/suggested-workflows/visual-testing.yml .github/workflows/
+
+# Activate all suggested workflows
+mv .atriumn/suggested-workflows/*.yml .github/workflows/
+```
+
+### Benefits
+
+- ✅ **Zero risk**: Existing workflows can't be accidentally broken
+- 📋 **Full visibility**: All workflow suggestions are tracked in issues
+- 🎯 **Selective adoption**: Cherry-pick which workflows to activate
+- 🔍 **Review at your pace**: No pressure to immediately adopt AI suggestions
+- 🔗 **Complete context**: Issues link back to the original work
+
 ## Architecture
 
 Atriumn is built on a robust, event-driven architecture that combines a GitHub App with reusable GitHub Actions workflows.

@@ -417,7 +417,7 @@ Closes #${issue.number}`;
             head: featureRef, 
             base: defaultBranch, 
             body: prBody, 
-            draft: true 
+            draft: false 
           });
           
           // Trigger the research phase
