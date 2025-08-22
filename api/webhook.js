@@ -197,12 +197,23 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
           },
         });
         
-        // Determine current phase from checks
-        const { data: { check_runs } } = await octokit.checks.listForRef({ 
-          owner, 
-          repo: repoName, 
-          ref: pr.head.sha 
+        // Get all commits in the PR to check for phase completions
+        const { data: commits } = await octokit.pulls.listCommits({
+          owner,
+          repo: repoName,
+          pull_number: pr.number
         });
+        
+        // Check runs from all commits (phases create new commits)
+        let check_runs = [];
+        for (const commit of commits.slice(-5)) { // Check last 5 commits
+          const { data: { check_runs: runs } } = await octokit.checks.listForRef({ 
+            owner, 
+            repo: repoName, 
+            ref: commit.sha 
+          });
+          check_runs = check_runs.concat(runs);
+        }
         
         const phaseOrder = ['validate', 'implement', 'plan', 'research'];
         let currentPhase = null;
