@@ -176,12 +176,16 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
         console.log('Review is not an approval, ignoring');
         return res.status(200).json({ status: 'ignored', reason: 'not an approval' });
       }
-
+      
+      // CRITICAL: Only process THIS specific approval event, not old ones
+      const reviewId = req.body.review.id;
+      const reviewSubmittedAt = req.body.review.submitted_at;
+      
       const { pull_request: pr, repository } = req.body;
       const owner = repository.owner.login;
       const repoName = repository.name;
       
-      console.log(`Processing approval on PR #${pr.number} in ${owner}/${repoName}`);
+      console.log(`Processing NEW approval (review ${reviewId}) on PR #${pr.number} in ${owner}/${repoName}`);
       
       try {
         // Import Octokit
