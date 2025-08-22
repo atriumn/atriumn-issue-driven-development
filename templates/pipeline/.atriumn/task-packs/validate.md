@@ -56,38 +56,104 @@ Do everything **inside this one session**.
    - Validate any migration notes are accurate
 
 8) **Create validation report**
-   - Update `thoughts/shared/decisions/issue-${issue_number}.md` with:
-     - Complete validation results
-     - Success criteria verification status
+   - Create `thoughts/shared/validation/issue-${issue_number}-validation-report.md` with:
+     - Executive summary of validation results
+     - Complete test results with pass/fail status
+     - Success criteria verification status  
      - Any issues found and resolutions
+     - Code quality metrics
+     - Performance benchmarks (if applicable)
+     - Security audit results
      - Final readiness assessment for production
      - Recommendations for deployment
+   - Also update `thoughts/shared/decisions/issue-${issue_number}.md` with:
+     - Brief validation summary
+     - Link to full validation report
+     - Final production readiness status
 
-## Validation checklist template:
+## Validation Report Template (for `thoughts/shared/validation/issue-${issue_number}-validation-report.md`):
 
-### Automated Verification Results:
+```markdown
+---
+date: [ISO timestamp]
+issue: "[issue_number]"
+feature: "[feature name]"
+validator: "claude-code"
+status: "[passed|failed|passed_with_warnings]"
+---
+
+# Validation Report: Issue #[issue_number]
+
+## Executive Summary
+[Brief 2-3 sentence summary of validation results and overall readiness]
+
+## Test Results
+
+### Automated Tests
+| Test Category | Status | Details |
+|--------------|--------|---------|
+| Unit Tests | ✅ Pass | [X/Y tests passing, coverage %] |
+| Integration Tests | ✅ Pass | [Details] |
+| Visual Regression | ✅ Pass | [Browser/viewport details] |
+| Linting | ✅ Pass | [No issues found] |
+| Type Checking | ✅ Pass | [No type errors] |
+| Accessibility | ✅ Pass | [WCAG AA compliant] |
+
+### Performance Metrics
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| [Metric name] | [Target value] | [Actual value] | ✅/❌ |
+
+### Manual Verification
+- [ ] Feature functionality verified
+- [ ] Edge cases tested
+- [ ] User experience validated
+- [ ] Cross-browser compatibility confirmed
+- [ ] Mobile responsiveness verified
+
+## Code Quality Assessment
+
+### Architecture Compliance
+[Assessment of adherence to existing patterns and architecture]
+
+### Security Review
+[Security considerations and any vulnerabilities found]
+
+### Error Handling
+[Validation of error scenarios and recovery]
+
+## Issues Found
+[List any issues discovered during validation with severity]
+
+## Recommendations
+[Specific recommendations for deployment or improvements]
+
+## Final Assessment
+**Production Readiness**: [Ready|Needs Changes|Failed]
+**Risk Level**: [Low|Medium|High]
+**Deployment Window**: [Recommended deployment timing]
+```
+
+## Success Criteria Checklist (use TodoWrite to track):
+
+### Automated Verification:
 - [ ] Tests pass: [status and details]
 - [ ] Linting passes: [status and details]
 - [ ] Type checking passes: [status and details]
 - [ ] Unit tests for new functionality: [coverage and status]
 - [ ] Integration tests: [status and details]
 
-### Manual Verification Results:
+### Manual Verification:
 - [ ] Feature works correctly: [detailed verification]
 - [ ] Performance acceptable: [measurements if applicable]
 - [ ] Edge cases handled: [specific cases tested]
 - [ ] User experience: [UX validation results]
 
-### Code Quality Assessment:
+### Code Quality:
 - [ ] Follows existing patterns: [compliance check]
 - [ ] Error handling: [validation of error scenarios]
 - [ ] Security considerations: [security review results]
 - [ ] Documentation updated: [doc update verification]
-
-### Final Assessment:
-- Overall readiness: [Ready/Needs Changes]
-- Critical issues: [list any blockers]
-- Recommendations: [deployment recommendations]
 
 ## Guardrails
 - Read plan and understand all success criteria before validating

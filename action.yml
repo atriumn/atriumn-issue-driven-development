@@ -59,7 +59,7 @@ runs:
 
     - name: Ensure output directories exist
       run: |
-        mkdir -p thoughts/shared/{research,decisions,plans}/tmp
+        mkdir -p thoughts/shared/{research,decisions,plans,validation}/tmp
       shell: bash
 
     - name: Load task-pack prompt for phase
@@ -162,6 +162,80 @@ runs:
             'validate': null
           }[phase];
           
+          let summary = `The AI agent successfully completed the ${phase} phase. The generated artifacts have been committed.`;
+          
+          // For validate phase, provide a summary of validation results
+          if (phase === 'validate') {
+            const fs = require('fs');
+            const path = require('path');
+            
+            try {
+              // First try to read the dedicated validation report
+              const validationReportPath = path.join('thoughts', 'shared', 'validation', `issue-${{ inputs.issue_number }}-validation-report.md`);
+              const decisionsPath = path.join('thoughts', 'shared', 'decisions', `issue-${{ inputs.issue_number }}.md`);
+              
+              let validationContent = '';
+              let reportLocation = '';
+              
+              // Check for dedicated validation report first
+              if (fs.existsSync(validationReportPath)) {
+                validationContent = fs.readFileSync(validationReportPath, 'utf8');
+                reportLocation = `thoughts/shared/validation/issue-${{ inputs.issue_number }}-validation-report.md`;
+              } else if (fs.existsSync(decisionsPath)) {
+                // Fall back to decisions file if no dedicated report
+                validationContent = fs.readFileSync(decisionsPath, 'utf8');
+                reportLocation = `thoughts/shared/decisions/issue-${{ inputs.issue_number }}.md`;
+              }
+              
+              if (validationContent) {
+                // Parse validation status from the content
+                const hasPassedStatus = validationContent.includes('status: "passed"') || validationContent.includes('Production Readiness**: Ready');
+                const hasWarnings = validationContent.includes('passed_with_warnings');
+                const hasFailed = validationContent.includes('status: "failed"') || validationContent.includes('Production Readiness**: Failed');
+                const hasAutomatedTests = validationContent.includes('✅') && (validationContent.includes('Automated Tests') || validationContent.includes('Unit Tests'));
+                const hasManualVerification = validationContent.includes('✅') && validationContent.includes('Manual Verification');
+                
+                // Extract executive summary if present
+                let executiveSummary = '';
+                const summaryMatch = validationContent.match(/## Executive Summary\n(.+?)(?=\n##|\n\n##)/s);
+                if (summaryMatch) {
+                  executiveSummary = summaryMatch[1].trim();
+                }
+                
+                // Build the summary
+                summary = `## Validation Complete! ${hasPassedStatus ? '✅' : hasWarnings ? '⚠️' : hasFailed ? '❌' : '🔍'}\n\n`;
+                
+                if (executiveSummary) {
+                  summary += `${executiveSummary}\n\n`;
+                }
+                
+                summary += `### Validation Results\n`;
+                summary += `- **Status**: ${hasPassedStatus ? '✅ Passed' : hasWarnings ? '⚠️ Passed with Warnings' : hasFailed ? '❌ Failed' : '🔍 In Review'}\n`;
+                summary += `- **Automated Tests**: ${hasAutomatedTests ? '✅ Passing' : '⚠️ Review Required'}\n`;
+                summary += `- **Manual Verification**: ${hasManualVerification ? '✅ Complete' : '⚠️ Review Required'}\n\n`;
+                
+                // Extract any critical issues
+                if (validationContent.includes('## Issues Found')) {
+                  const issuesMatch = validationContent.match(/## Issues Found\n(.+?)(?=\n##|\n\n##)/s);
+                  if (issuesMatch && !issuesMatch[1].includes('[List any issues')) {
+                    summary += `### Issues Found\n${issuesMatch[1].trim()}\n\n`;
+                  }
+                }
+                
+                summary += `### Full Report\n`;
+                summary += `📄 Full validation report available at: \`${reportLocation}\`\n\n`;
+                summary += `Please review the complete validation report and approve if everything meets the acceptance criteria.`;
+              } else {
+                summary += ` Validation completed. Please check the artifacts for validation results.`;
+              }
+            } catch (error) {
+              console.error('Failed to read validation results:', error);
+              summary += ` Please check the validation report in the thoughts/shared/validation/ directory for details.`;
+            }
+          } else {
+            summary += ` Please review the changes in the PR and provide your approval to proceed to the next phase.`;
+          }
+          
           await github.rest.checks.update({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -170,7 +244,7 @@ runs:
             conclusion: 'success',
             output: {
               title: `${phaseTitle} Phase Complete!`,
-              summary: `The AI agent successfully completed the ${phase} phase. The generated artifacts have been committed. Please review the changes in the PR and provide your approval to proceed to the next phase.`
+              summary: summary
             }
           });
           
