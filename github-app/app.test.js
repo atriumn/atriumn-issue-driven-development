@@ -169,9 +169,12 @@ describe('Atriumn GitHub App Logic', () => {
   describe('installation handlers', () => {
     it('should create onboarding PR when app is installed', async () => {
       const payload = {
-        installation: { id: 12345 },
+        installation: { 
+          id: 12345,
+          account: { login: 'test-owner' }
+        },
         repositories: [
-          { owner: { login: 'test-owner' }, name: 'test-repo' }
+          { name: 'test-repo' }
         ]
       };
 
@@ -222,9 +225,12 @@ describe('Atriumn GitHub App Logic', () => {
 
     it('should create onboarding PR when repositories are added', async () => {
       const payload = {
-        installation: { id: 12345 },
+        installation: { 
+          id: 12345,
+          account: { login: 'test-owner' }
+        },
         repositories_added: [
-          { owner: { login: 'test-owner' }, name: 'new-repo' }
+          { name: 'new-repo' }
         ]
       };
 
@@ -248,9 +254,12 @@ describe('Atriumn GitHub App Logic', () => {
       mockOctokit.repos.get.mockRejectedValueOnce(new Error('API Error'));
       
       const payload = {
-        installation: { id: 12345 },
+        installation: { 
+          id: 12345,
+          account: { login: 'test-owner' }
+        },
         repositories: [
-          { owner: { login: 'test-owner' }, name: 'failing-repo' }
+          { name: 'failing-repo' }
         ]
       };
 
