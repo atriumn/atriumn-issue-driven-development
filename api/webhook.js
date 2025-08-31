@@ -163,6 +163,119 @@ The pipeline will automatically fetch the latest AI prompts and logic from the A
       }
     }
 
+    // Handle installation_repositories.added event
+    if (event === 'installation_repositories' && req.body.action === 'added') {
+      const { installation, repositories_added } = req.body;
+      
+      // Import Octokit here to avoid module issues
+      const { Octokit } = await import('@octokit/rest');
+      const { createAppAuth } = await import('@octokit/auth-app');
+      
+      const octokit = new Octokit({
+        authStrategy: createAppAuth,
+        auth: {
+          appId: process.env.GITHUB_APP_ID,
+          privateKey: process.env.GITHUB_PRIVATE_KEY,
+          installationId: installation.id,
+        },
+      });
+
+      // Get template files
+      const templateFiles = await getTemplateFiles();
+      console.log(`Loaded ${templateFiles.length} template files for installation_repositories.added`);
+
+      // Process each added repository
+      for (const repo of repositories_added) {
+        try {
+          const owner = installation.account.login;
+          const repoName = repo.name;
+          
+          console.log(`Creating onboarding PR for ${owner}/${repoName} (via installation_repositories.added)`);
+          
+          // Get default branch
+          const { data: repoData } = await octokit.repos.get({ owner, repo: repoName });
+          const defaultBranch = repoData.default_branch;
+          
+          // Get the base branch ref
+          const { data: ref } = await octokit.git.getRef({ 
+            owner, 
+            repo: repoName, 
+            ref: `heads/${defaultBranch}` 
+          });
+          
+          // Create setup branch
+          const setupBranch = 'atriumn/setup';
+          try {
+            await octokit.git.createRef({
+              owner,
+              repo: repoName,
+              ref: `refs/heads/${setupBranch}`,
+              sha: ref.object.sha
+            });
+          } catch (error) {
+            if (error.status === 422) {
+              // Branch already exists, delete and recreate
+              await octokit.git.deleteRef({
+                owner,
+                repo: repoName,
+                ref: `heads/${setupBranch}`
+              });
+              await octokit.git.createRef({
+                owner,
+                repo: repoName,
+                ref: `refs/heads/${setupBranch}`,
+                sha: ref.object.sha
+              });
+            } else {
+              throw error;
+            }
+          }
+          
+          // Create all template files
+          for (const file of templateFiles) {
+            console.log(`Creating ${file.path}`);
+            await octokit.repos.createOrUpdateFileContents({
+              owner,
+              repo: repoName,
+              path: file.path,
+              message: `feat: Add Atriumn pipeline file - ${file.path}`,
+              content: Buffer.from(file.content).toString('base64'),
+              branch: setupBranch
+            });
+          }
+          
+          // Create PR
+          const prBody = `Welcome to Atriumn! This PR adds a lightweight workflow that connects your repository to the Atriumn AI development pipeline.
+
+**What this PR adds:**
+*   A single workflow file that triggers the Atriumn pipeline
+*   Automatic updates when we improve the pipeline
+*   No vendor lock-in - you can customize or remove at any time
+
+**Next Steps:**
+1. Merge this PR
+2. Add the \`CLAUDE_CODE_OAUTH_TOKEN\` secret to your repository (get it from [Claude Code](https://github.com/apps/claude-code))
+3. Create an issue describing what you want to build
+4. Comment \`/atriumn-research\` to start the AI pipeline!
+
+The pipeline will automatically fetch the latest AI prompts and logic from the Atriumn repository, ensuring you always have the most up-to-date version.`;
+
+          await octokit.pulls.create({
+            owner,
+            repo: repoName,
+            title: '🚀 Configure Atriumn Issue-Driven Development',
+            head: setupBranch,
+            base: defaultBranch,
+            body: prBody
+          });
+          
+          console.log(`Successfully created onboarding PR for ${owner}/${repoName}`);
+        } catch (error) {
+          console.error(`Failed to process ${repo.name}:`, error.message);
+        }
+      }
+    }
+
     // Handle pull_request_review.submitted event for phase progression
     if (event === 'pull_request_review') {
       console.log(`Pull request review event: action=${req.body.action}, state=${req.body.review?.state}, PR=#${req.body.pull_request?.number}`);
