@@ -71,15 +71,17 @@ By merging this, your repository will be fully equipped to run the pipeline with
 
 app.webhooks.on('installation.created', async ({ payload }) => {
   const octokit = await app.getInstallationOctokit(payload.installation.id);
+  const owner = payload.installation.account.login;
   for (const repo of payload.repositories) {
-    await createOnboardingPR(octokit, repo.owner.login, repo.name);
+    await createOnboardingPR(octokit, owner, repo.name);
   }
 });
 
 app.webhooks.on('installation_repositories.added', async ({ payload }) => {
   const octokit = await app.getInstallationOctokit(payload.installation.id);
+  const owner = payload.installation.account.login;
   for (const repo of payload.repositories_added) {
-    await createOnboardingPR(octokit, repo.owner.login, repo.name);
+    await createOnboardingPR(octokit, owner, repo.name);
   }
 });
 
